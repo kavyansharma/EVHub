@@ -16,6 +16,25 @@ import 'repositories/wallet_repository.dart';
 import 'services/auth_service.dart';
 import 'services/storage_service.dart';
 
+import 'repositories/garage_repository.dart';
+import 'repositories/history_repository.dart';
+import 'repositories/analytics_repository.dart';
+import 'repositories/notification_repository.dart';
+import 'repositories/assistant_repository.dart';
+
+import 'services/vehicle_service.dart';
+import 'services/battery_health_service.dart';
+import 'services/analytics_service.dart';
+import 'services/notification_service.dart';
+import 'services/ai_service.dart';
+
+import 'providers/garage_provider.dart';
+import 'providers/history_provider.dart';
+import 'providers/analytics_provider.dart';
+import 'providers/battery_provider.dart';
+import 'providers/assistant_provider.dart';
+import 'providers/notification_provider.dart';
+
 void main() async {
   // Ensure Flutter engine bindings are ready before initialization
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +61,20 @@ void main() async {
     userRepository: userRepository,
   );
 
+  // Phase 3 Services
+  final vehicleService = VehicleService();
+  final batteryHealthService = BatteryHealthService();
+  final analyticsService = AnalyticsService();
+  final notificationService = NotificationService();
+  final aiService = AIService();
+
+  // Phase 3 Repositories
+  final garageRepository = GarageRepository();
+  final historyRepository = HistoryRepository();
+  final analyticsRepository = AnalyticsRepository();
+  final notificationRepository = NotificationRepository(notificationService: notificationService);
+  final assistantRepository = AssistantRepository(aiService: aiService);
+
   runApp(
     MultiProvider(
       providers: [
@@ -62,6 +95,30 @@ void main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => WalletProvider(walletRepository: walletRepository),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => GarageProvider(
+            garageRepository: garageRepository,
+            vehicleService: vehicleService,
+          )..loadEcosystemVehicles(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => HistoryProvider(historyRepository: historyRepository),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AnalyticsProvider(
+            analyticsRepository: analyticsRepository,
+            analyticsService: analyticsService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => BatteryProvider(batteryHealthService: batteryHealthService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AssistantProvider(assistantRepository: assistantRepository),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => NotificationProvider(notificationRepository: notificationRepository),
         ),
       ],
       child: const MyApp(),

@@ -10,6 +10,7 @@ import '../../components/wallet_card.dart';
 import '../../data/mock_data.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../phase3/phase3_dashboard.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -197,6 +198,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const Phase3Dashboard()));
+        },
+        backgroundColor: AppColors.primaryCyan,
+        icon: const Icon(Icons.star, color: Colors.black),
+        label: const Text('Smart EV Hub', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
