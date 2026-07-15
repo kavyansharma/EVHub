@@ -21,8 +21,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Initialize Firebase First!
-  await FirebaseService.initialize();
-
+  try {
+    await FirebaseService.initialize();
+  } catch (e, stack) {
+    debugPrint("Firebase init failed: $e");
+    debugPrintStack(stackTrace: stack);
+  }
   // 1. Initialize core persistence and network services
   final storageService = await StorageService.init();
 

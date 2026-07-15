@@ -6,7 +6,12 @@ import 'package:google_sign_in/google_sign_in.dart';
 /// Static [validateEmail] and [validatePassword] are kept for UI validation.
 class AuthService {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  GoogleSignIn? _googleSignIn;
+
+  GoogleSignIn get googleSignIn {
+    _googleSignIn ??= GoogleSignIn();
+    return _googleSignIn!;
+  }
 
   // ─── Static validators (used by auth screens) ─────────────────────────────
 
@@ -63,7 +68,7 @@ class AuthService {
 
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
       if (googleUser == null) return null; // User cancelled
 
       final GoogleSignInAuthentication googleAuth =
@@ -89,7 +94,9 @@ class AuthService {
   // ─── Sign Out ─────────────────────────────────────────────────────────────
 
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
+    if (_googleSignIn != null) {
+      await _googleSignIn!.signOut();
+    }
     await _firebaseAuth.signOut();
   }
 }

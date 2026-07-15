@@ -129,26 +129,37 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> loginAsGuest() async {
+  Future<bool> loginAsGuest() async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
-    _user = await _authRepository.startGuestSession();
-
-    _isLoading = false;
-    notifyListeners();
+    try {
+      _user = await _authRepository.startGuestSession();
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<void> logout() async {
     _isLoading = true;
     notifyListeners();
 
-    await _authRepository.logout();
-    _user = null;
-
-    _isLoading = false;
-    notifyListeners();
+    try {
+      await _authRepository.logout();
+    } catch (e) {
+      debugPrint("Logout failed: $e");
+    } finally {
+      _user = null;
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Map<String, String>? getRememberedCredentials() {

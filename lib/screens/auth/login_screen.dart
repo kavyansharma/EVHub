@@ -75,9 +75,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _loginAsGuest() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.loginAsGuest();
-    if (mounted) {
+    final success = await authProvider.loginAsGuest();
+    if (!mounted) return;
+    
+    if (success) {
       Navigator.pushReplacementNamed(context, AppRoutes.home);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.errorMessage ?? 'Guest login failed'),
+          backgroundColor: AppColors.dangerRed,
+        ),
+      );
     }
   }
 
