@@ -16,6 +16,14 @@ class VehicleModel {
   final String registrationNumber;
   final String nickname;
   final bool isDefault;
+  
+  // Phase 6 Additions
+  final String vehicleColor;
+  final double currentBatteryPct;
+  final double averageEfficiency; // Wh/km
+  final bool fastChargingSupport;
+  final int wheelSize;
+  final String drivingStyle; // e.g., 'Eco', 'Normal', 'Sport'
 
   const VehicleModel({
     required this.id,
@@ -33,6 +41,12 @@ class VehicleModel {
     required this.registrationNumber,
     required this.nickname,
     this.isDefault = false,
+    this.vehicleColor = 'White',
+    this.currentBatteryPct = 100.0,
+    this.averageEfficiency = 150.0,
+    this.fastChargingSupport = true,
+    this.wheelSize = 18,
+    this.drivingStyle = 'Normal',
   });
 
   factory VehicleModel.fromFirestore(DocumentSnapshot doc) {
@@ -57,6 +71,12 @@ class VehicleModel {
       registrationNumber: data['registrationNumber'] ?? '',
       nickname: data['nickname'] ?? '',
       isDefault: data['isDefault'] ?? false,
+      vehicleColor: data['vehicleColor'] ?? 'White',
+      currentBatteryPct: (data['currentBatteryPct'] ?? 100.0).toDouble(),
+      averageEfficiency: (data['averageEfficiency'] ?? 150.0).toDouble(),
+      fastChargingSupport: data['fastChargingSupport'] ?? true,
+      wheelSize: data['wheelSize'] ?? 18,
+      drivingStyle: data['drivingStyle'] ?? 'Normal',
     );
   }
 
@@ -76,6 +96,12 @@ class VehicleModel {
       'registrationNumber': registrationNumber,
       'nickname': nickname,
       'isDefault': isDefault,
+      'vehicleColor': vehicleColor,
+      'currentBatteryPct': currentBatteryPct,
+      'averageEfficiency': averageEfficiency,
+      'fastChargingSupport': fastChargingSupport,
+      'wheelSize': wheelSize,
+      'drivingStyle': drivingStyle,
     };
   }
 

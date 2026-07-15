@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/charging_session_provider.dart';
 import '../ai/ai_assistant_screen.dart';
+import '../phase4/route_planner_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -77,6 +78,11 @@ class DashboardScreen extends StatelessWidget {
                 
                 // AI Assistant Widget
                 _buildAIAssistantWidget(context, brandColor),
+                
+                const SizedBox(height: 24),
+                
+                // Smart Route Planner
+                _buildRoutePlannerWidget(context, brandColor),
                 
                 const SizedBox(height: 24),
                 
@@ -253,6 +259,40 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRoutePlannerWidget(BuildContext context, Color brandColor) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const RoutePlannerScreen()));
+      },
+      child: GlassContainer(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.alt_route, color: Colors.blue, size: 28),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Smart Route Planner', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text('Plan your next long trip with AI charging stops.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
+        ),
       ),
     );
   }

@@ -1,65 +1,46 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
+import 'dart:ui';
+import 'package:evhub/core/theme/app_colors.dart';
 
 class GlassContainer extends StatelessWidget {
   final Widget child;
-  final double? width;
-  final double? height;
-  final EdgeInsetsGeometry? padding;
-  final EdgeInsetsGeometry? margin;
   final double borderRadius;
-  final double blur;
+  final EdgeInsets padding;
+  final EdgeInsets margin;
 
   const GlassContainer({
     super.key,
     required this.child,
-    this.width,
-    this.height,
-    this.padding,
-    this.margin,
     this.borderRadius = 24.0,
-    this.blur = 15.0,
+    this.padding = const EdgeInsets.all(24.0),
+    this.margin = EdgeInsets.zero,
   });
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-
     return Container(
-      width: width,
-      height: height,
       margin: margin,
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: (brightness == Brightness.dark ? Colors.black : Colors.grey)
-                .withOpacity(0.08),
-            blurRadius: 30,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.glassFill().withOpacity(0.4),
-                  AppColors.glassFill().withOpacity(0.1),
-                ],
-              ),
+              color: AppColors.card.withOpacity(0.4),
               borderRadius: BorderRadius.circular(borderRadius),
               border: Border.all(
-                color: AppColors.glassBorder(),
-                width: 1.0,
+                color: AppColors.textPrimary.withOpacity(0.08),
+                width: 1.2,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.4),
+                  blurRadius: 20,
+                  spreadRadius: -5,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
             child: child,
           ),

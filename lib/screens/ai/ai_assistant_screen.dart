@@ -13,17 +13,27 @@ class AIAssistantScreen extends StatefulWidget {
   State<AIAssistantScreen> createState() => _AIAssistantScreenState();
 }
 
-class _AIAssistantScreenState extends State<AIAssistantScreen> {
+class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  late AnimationController _bgAnimationController;
 
   @override
   void initState() {
     super.initState();
+    _bgAnimationController = AnimationController(vsync: this, duration: const Duration(seconds: 10))..repeat(reverse: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = context.read<AuthProvider>();
       context.read<AssistantProvider>().loadHistory(authProvider.user?.id ?? 'default_user');
     });
+  }
+
+  @override
+  void dispose() {
+    _bgAnimationController.dispose();
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _scrollToBottom() {
@@ -52,8 +62,6 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     final theme = Theme.of(context);
     final brandColor = theme.colorScheme.primary;
     final provider = context.watch<AssistantProvider>();
-
-    // Using reversed because the provider inserts at index 0
     final messages = provider.messages.reversed.toList();
 
     return Scaffold(
@@ -61,76 +69,122 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        flexibleSpace: ClipRRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(color: AppColors.background.withOpacity(0.5)),
+          ),
+        ),
         title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: brandColor.withOpacity(0.2),
                 shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: brandColor.withOpacity(0.5), blurRadius: 10)],
               ),
-              child: Icon(Icons.auto_awesome, color: brandColor, size: 20),
+              child: Icon(Icons.auto_awesome, color: brandColor, size: 16),
             ),
-            const SizedBox(width: 12),
-            const Text('EVHub AI', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 8),
+            const Text('EVHub Intelligence', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
+        centerTitle: true,
+        actions: [
+          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+        ],
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [brandColor.withOpacity(0.1), AppColors.background],
-            stops: const [0.0, 0.5],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(24),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = messages[index];
-                    return _buildMessageBubble(msg, brandColor);
-                  },
-                ),
-              ),
-              if (provider.isTyping)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.glassFill(theme.brightness),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppColors.glassBorder(theme.brightness)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: brandColor),
-                            ),
-                            const SizedBox(width: 12),
-                            const Text('EVHub AI is thinking...', style: TextStyle(color: Colors.grey)),
-                          ],
-                        ),
+      body: Stack(
+        children: [
+          // Dynamic Background
+          AnimatedBuilder(
+            animation: _bgAnimationController,
+            builder: (context, child) {
+              return Stack(
+                children: [
+                  Container(color: AppColors.background),
+                  Positioned(
+                    top: -100 + (_bgAnimationController.value * 50),
+                    left: -50 - (_bgAnimationController.value * 50),
+                    child: Container(
+                      width: 300,
+                      height: 300,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: brandColor.withOpacity(0.15),
+                        boxShadow: [BoxShadow(color: brandColor.withOpacity(0.2), blurRadius: 100, spreadRadius: 50)],
                       ),
-                    ],
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 100 - (_bgAnimationController.value * 30),
+                    right: -100 + (_bgAnimationController.value * 30),
+                    child: Container(
+                      width: 400,
+                      height: 400,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.primaryPurple.withOpacity(0.1),
+                        boxShadow: [BoxShadow(color: AppColors.primaryPurple.withOpacity(0.15), blurRadius: 100, spreadRadius: 50)],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          
+          SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      return _buildMessageBubble(messages[index], brandColor);
+                    },
                   ),
                 ),
-              _buildInputArea(brandColor),
-            ],
+                if (provider.isTyping) _buildTypingIndicator(brandColor),
+                _buildInputArea(brandColor),
+              ],
+            ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator(Color brandColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.card.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: brandColor),
+                ),
+                const SizedBox(width: 12),
+                const Text('Analyzing...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -139,7 +193,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     final isUser = message.isUser;
     
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
+      padding: const EdgeInsets.only(bottom: 20.0),
       child: Row(
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -147,34 +201,38 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
           if (!isUser) ...[
             Container(
               padding: const EdgeInsets.all(8),
-              margin: const EdgeInsets.only(right: 8),
+              margin: const EdgeInsets.only(right: 12),
               decoration: BoxDecoration(
-                color: brandColor.withOpacity(0.2),
+                gradient: LinearGradient(colors: [brandColor.withOpacity(0.5), brandColor.withOpacity(0.1)]),
                 shape: BoxShape.circle,
+                border: Border.all(color: brandColor.withOpacity(0.5)),
               ),
-              child: Icon(Icons.auto_awesome, color: brandColor, size: 16),
+              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
             ),
           ],
           Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: isUser ? brandColor : AppColors.glassFill(Theme.of(context).brightness),
+                color: isUser ? brandColor : AppColors.card.withOpacity(0.6),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(24),
                   topRight: const Radius.circular(24),
                   bottomLeft: isUser ? const Radius.circular(24) : const Radius.circular(4),
                   bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(24),
                 ),
-                border: isUser ? null : Border.all(color: AppColors.glassBorder(Theme.of(context).brightness)),
-                boxShadow: isUser ? AppColors.neonShadow(color: brandColor, blurRadius: 8) : null,
+                border: isUser ? null : Border.all(color: Colors.white10),
+                boxShadow: [
+                  BoxShadow(
+                    color: isUser ? brandColor.withOpacity(0.3) : Colors.black26,
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Text(
                 message.message,
-                style: TextStyle(
-                  color: isUser ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color,
-                  fontSize: 16,
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
               ),
             ),
           ),
@@ -187,29 +245,30 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   Widget _buildInputArea(Color brandColor) {
     return ClipRRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.only(left: 24, right: 24, top: 16, bottom: 32),
           decoration: BoxDecoration(
-            color: AppColors.glassFill(Theme.of(context).brightness),
-            border: Border(top: BorderSide(color: AppColors.glassBorder(Theme.of(context).brightness))),
+            color: AppColors.background.withOpacity(0.6),
+            border: const Border(top: BorderSide(color: Colors.white10)),
           ),
           child: Row(
             children: [
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                    color: AppColors.card.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: Colors.white12),
                   ),
                   child: TextField(
                     controller: _messageController,
+                    style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      hintText: 'Ask about chargers, routes...',
+                      hintText: 'Ask me anything...',
                       hintStyle: TextStyle(color: Colors.grey),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                     ),
                     onSubmitted: (_) => _sendMessage(),
                   ),
@@ -219,13 +278,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
               GestureDetector(
                 onTap: _sendMessage,
                 child: Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: brandColor,
                     shape: BoxShape.circle,
-                    boxShadow: AppColors.neonShadow(color: brandColor),
+                    boxShadow: [
+                      BoxShadow(color: brandColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))
+                    ],
                   ),
-                  child: const Icon(Icons.send, color: Colors.white),
+                  child: const Icon(Icons.arrow_upward, color: Colors.white, size: 20),
                 ),
               ),
             ],
