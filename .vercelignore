@@ -1,0 +1,33 @@
+# Flutter native platform directories (not needed for web deployment)
+android/
+ios/
+linux/
+macos/
+windows/
+
+# Flutter source code (compiled into build/web, not needed at runtime)
+lib/
+test/
+
+# Non-web build artifacts
+build/.cxx/
+build/app/
+build/native_assets/
+build/shared_preferences_android/
+build/test_cache/
+build/unit_test_assets/
+
+# Flutter tooling / metadata
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+*.iml
+evhub.iml
+
+# IDE files
+.idea/
+
+# Analysis
+analysis_options.yaml
+pubspec.lock
