@@ -28,31 +28,31 @@ class DefaultFirebaseOptions {
   /// Web Firebase configuration.
   /// Replace all values with your real Firebase project credentials.
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_WEB_API_KEY',
-    appId: 'YOUR_WEB_APP_ID',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
-    measurementId: 'YOUR_MEASUREMENT_ID',
+    apiKey: 'AIzaSyCEo5B22e8tT6UUIMgI8BA_jXLdLMQsmAg',
+    appId: '1:211167795372:web:c41d97ccea2abe04fe6709',
+    messagingSenderId: '211167795372',
+    projectId: 'evhub-9e25f',
+    authDomain: 'evhub-9e25f.firebaseapp.com',
+    storageBucket: 'evhub-9e25f.firebasestorage.app',
+    measurementId: 'G-1QT3R9G61B',
   );
 
   /// Android Firebase configuration (if needed).
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'YOUR_ANDROID_API_KEY',
-    appId: 'YOUR_ANDROID_APP_ID',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
+    apiKey: 'AIzaSyCEo5B22e8tT6UUIMgI8BA_jXLdLMQsmAg',
+    appId: '1:211167795372:android:cad61d54242d6f41fe6709',
+    messagingSenderId: '211167795372',
+    projectId: 'evhub-9e25f',
+    storageBucket: 'evhub-9e25f.firebasestorage.app',
   );
 
   /// iOS Firebase configuration (if needed).
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: 'YOUR_IOS_APP_ID',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
-    iosBundleId: 'com.evhub.app',
+    apiKey: 'AIzaSyCEo5B22e8tT6UUIMgI8BA_jXLdLMQsmAg',
+    appId: '1:211167795372:ios:71e31f7e10af619bfe6709',
+    messagingSenderId: '211167795372',
+    projectId: 'evhub-9e25f',
+    storageBucket: 'evhub-9e25f.firebasestorage.app',
+    iosBundleId: 'com.evhub.evhub',
   );
 }
