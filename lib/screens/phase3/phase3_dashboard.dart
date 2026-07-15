@@ -9,6 +9,7 @@ import 'notification_screen.dart';
 // import 'wallet_analytics_screen.dart';
 // import 'ai_assistant_screen.dart';
 // import 'trip_intelligence_screen.dart';
+import '../phase4/phase4_dashboard.dart';
 
 class Phase3Dashboard extends StatelessWidget {
   const Phase3Dashboard({super.key});
@@ -26,6 +27,12 @@ class Phase3Dashboard extends StatelessWidget {
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const Phase4Dashboard())),
+        backgroundColor: AppColors.primaryPurple,
+        icon: const Icon(Icons.rocket_launch, color: Colors.white),
+        label: const Text('Phase 4: Live Ecosystem', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

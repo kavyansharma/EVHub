@@ -1,10 +1,18 @@
 import '../models/chat_message.dart';
 
 class AIService {
+  // TODO: Integrate google_generative_ai package
+  // late final GenerativeModel _model;
+
+  void initialize(String apiKey) {
+    // _model = GenerativeModel(model: 'gemini-pro', apiKey: apiKey);
+  }
+
   /// Generate a response using an AI model.
-  /// This is currently an intelligent mock that can be replaced with the Gemini API later.
   Future<ChatMessage> generateResponse(String prompt) async {
-    // Simulate thinking delay
+    // TODO: _model.generateContent([Content.text(prompt)]);
+    
+    // Fallback/Simulated delay for now until SDK is installed
     await Future.delayed(const Duration(seconds: 2));
 
     String responseText = '';

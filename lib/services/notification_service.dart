@@ -1,8 +1,19 @@
 import '../models/notification_model.dart';
 
 class NotificationService {
+  // TODO: Integrate FirebaseMessaging
+  // late final FirebaseMessaging _messaging;
+
+  void initialize() {
+    // _messaging = FirebaseMessaging.instance;
+    // _messaging.requestPermission();
+    // _messaging.onTokenRefresh.listen((token) {
+    //   // Save token to Firestore
+    // });
+  }
+
   /// Local cache for testing without FCM.
-  /// In production, this would integrate with Firebase Messaging.
+  /// In production, this would integrate with Firebase Messaging streams.
   
   Future<List<NotificationModel>> fetchNotifications(String userId) async {
     await Future.delayed(const Duration(milliseconds: 400));

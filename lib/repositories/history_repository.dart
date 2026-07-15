@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/charging_session.dart';
-import '../services/storage_service.dart';
 
 class HistoryRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;

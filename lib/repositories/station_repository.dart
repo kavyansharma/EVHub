@@ -53,6 +53,11 @@ class StationRepositoryImpl implements StationRepository {
 
   @override
   Stream<List<StationModel>> watchStations() {
+    // Phase 4: In a fully live environment, this would combine:
+    // 1. A stream from local Firestore cache (_stationsCol.snapshots())
+    // 2. Real-time REST API polling (e.g., from Tata Power/Statiq) via MapsRepository/StationApiService
+    // For now, we continue streaming the seeded local cache as our source of truth.
+    
     return _stationsCol.snapshots().map(
           (snap) => snap.docs
               .map((doc) => StationModel.fromFirestore(doc))

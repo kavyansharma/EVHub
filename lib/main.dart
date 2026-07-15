@@ -21,12 +21,22 @@ import 'repositories/history_repository.dart';
 import 'repositories/analytics_repository.dart';
 import 'repositories/notification_repository.dart';
 import 'repositories/assistant_repository.dart';
+import 'repositories/reservation_repository.dart';
+import 'repositories/review_repository.dart';
+import 'repositories/reward_repository.dart';
+import 'repositories/profile_repository.dart';
+import 'repositories/maps_repository.dart';
 
 import 'services/vehicle_service.dart';
 import 'services/battery_health_service.dart';
 import 'services/analytics_service.dart';
 import 'services/notification_service.dart';
 import 'services/ai_service.dart';
+import 'services/reservation_service.dart';
+import 'services/review_service.dart';
+import 'services/reward_service.dart';
+import 'services/profile_service.dart';
+import 'services/maps_service.dart';
 
 import 'providers/garage_provider.dart';
 import 'providers/history_provider.dart';
@@ -34,6 +44,11 @@ import 'providers/analytics_provider.dart';
 import 'providers/battery_provider.dart';
 import 'providers/assistant_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/reservation_provider.dart';
+import 'providers/review_provider.dart';
+import 'providers/reward_provider.dart';
+import 'providers/profile_provider.dart';
+import 'providers/maps_provider.dart';
 
 void main() async {
   // Ensure Flutter engine bindings are ready before initialization
@@ -67,13 +82,23 @@ void main() async {
   final analyticsService = AnalyticsService();
   final notificationService = NotificationService();
   final aiService = AIService();
+  final reservationService = ReservationService();
+  final reviewService = ReviewService();
+  final rewardService = RewardService();
+  final profileService = ProfileService();
+  final mapsService = MapsService();
 
-  // Phase 3 Repositories
+  // Phase 3 & 4 Repositories
   final garageRepository = GarageRepository();
   final historyRepository = HistoryRepository();
   final analyticsRepository = AnalyticsRepository();
   final notificationRepository = NotificationRepository(notificationService: notificationService);
   final assistantRepository = AssistantRepository(aiService: aiService);
+  final reservationRepository = ReservationRepository();
+  final reviewRepository = ReviewRepository();
+  final rewardRepository = RewardRepository();
+  final profileRepository = ProfileRepository();
+  final mapsRepository = MapsRepository(mapsService: mapsService);
 
   runApp(
     MultiProvider(
@@ -119,6 +144,36 @@ void main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => NotificationProvider(notificationRepository: notificationRepository),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ReservationProvider(
+            reservationRepository: reservationRepository,
+            reservationService: reservationService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ReviewProvider(
+            reviewRepository: reviewRepository,
+            reviewService: reviewService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => RewardProvider(
+            rewardRepository: rewardRepository,
+            rewardService: rewardService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ProfileProvider(
+            profileRepository: profileRepository,
+            profileService: profileService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => MapsProvider(
+            mapsRepository: mapsRepository,
+            mapsService: mapsService,
+          ),
         ),
       ],
       child: const MyApp(),

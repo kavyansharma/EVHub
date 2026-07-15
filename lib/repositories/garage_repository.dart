@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/vehicle_model.dart';
-import '../services/storage_service.dart';
 
 class GarageRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
