@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/routes/app_routes.dart';
 import 'core/theme/app_theme.dart';
+import 'screens/splash/splash_screen.dart';
 import 'firebase/firebase_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/station_provider.dart';
@@ -26,6 +27,14 @@ import 'repositories/review_repository.dart';
 import 'repositories/reward_repository.dart';
 import 'repositories/profile_repository.dart';
 import 'repositories/maps_repository.dart';
+import 'repositories/charging_session_repository.dart';
+import 'repositories/health_repository.dart';
+import 'repositories/subscription_repository.dart';
+import 'repositories/fleet_repository.dart';
+import 'repositories/ecosystem_repository.dart';
+import 'repositories/maintenance_repository.dart';
+import 'repositories/route_analytics_repository.dart';
+import 'repositories/admin_repository.dart';
 
 import 'services/vehicle_service.dart';
 import 'services/battery_health_service.dart';
@@ -37,6 +46,15 @@ import 'services/review_service.dart';
 import 'services/reward_service.dart';
 import 'services/profile_service.dart';
 import 'services/maps_service.dart';
+import 'services/charging_session_service.dart';
+import 'services/health_service.dart';
+import 'services/directions_service.dart';
+import 'services/subscription_service.dart';
+import 'services/fleet_service.dart';
+import 'services/ecosystem_service.dart';
+import 'services/maintenance_service.dart';
+import 'services/route_analytics_service.dart';
+import 'services/admin_service.dart';
 
 import 'providers/garage_provider.dart';
 import 'providers/history_provider.dart';
@@ -49,6 +67,14 @@ import 'providers/review_provider.dart';
 import 'providers/reward_provider.dart';
 import 'providers/profile_provider.dart';
 import 'providers/maps_provider.dart';
+import 'providers/charging_session_provider.dart';
+import 'providers/health_provider.dart';
+import 'providers/subscription_provider.dart';
+import 'providers/fleet_provider.dart';
+import 'providers/ecosystem_provider.dart';
+import 'providers/maintenance_provider.dart';
+import 'providers/route_analytics_provider.dart';
+import 'providers/admin_provider.dart';
 
 void main() async {
   // Ensure Flutter engine bindings are ready before initialization
@@ -87,8 +113,17 @@ void main() async {
   final rewardService = RewardService();
   final profileService = ProfileService();
   final mapsService = MapsService();
+  final chargingSessionService = ChargingSessionService();
+  final healthService = HealthService();
+  final directionsService = DirectionsService();
+  final subscriptionService = SubscriptionService();
+  final fleetService = FleetService();
+  final ecosystemService = EcosystemService();
+  final maintenanceService = MaintenanceService();
+  final routeAnalyticsService = RouteAnalyticsService();
+  final adminService = AdminService();
 
-  // Phase 3 & 4 Repositories
+  // Phase 3, 4 & 5 Repositories
   final garageRepository = GarageRepository();
   final historyRepository = HistoryRepository();
   final analyticsRepository = AnalyticsRepository();
@@ -99,6 +134,14 @@ void main() async {
   final rewardRepository = RewardRepository();
   final profileRepository = ProfileRepository();
   final mapsRepository = MapsRepository(mapsService: mapsService);
+  final chargingSessionRepository = ChargingSessionRepository();
+  final healthRepository = HealthRepository();
+  final subscriptionRepository = SubscriptionRepository();
+  final fleetRepository = FleetRepository();
+  final ecosystemRepository = EcosystemRepository();
+  final maintenanceRepository = MaintenanceRepository();
+  final routeAnalyticsRepository = RouteAnalyticsRepository();
+  final adminRepository = AdminRepository();
 
   runApp(
     MultiProvider(
@@ -116,7 +159,10 @@ void main() async {
           create: (_) => StationProvider(stationRepository: stationRepository),
         ),
         ChangeNotifierProvider(
-          create: (_) => TripProvider(tripRepository: tripRepository),
+          create: (_) => TripProvider(
+            tripRepository: tripRepository,
+            directionsService: directionsService,
+          ),
         ),
         ChangeNotifierProvider(
           create: (_) => WalletProvider(walletRepository: walletRepository),
@@ -175,6 +221,54 @@ void main() async {
             mapsService: mapsService,
           ),
         ),
+        ChangeNotifierProvider(
+          create: (_) => ChargingSessionProvider(
+            repository: chargingSessionRepository,
+            service: chargingSessionService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => HealthProvider(
+            repository: healthRepository,
+            service: healthService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => SubscriptionProvider(
+            repository: subscriptionRepository,
+            service: subscriptionService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => FleetProvider(
+            repository: fleetRepository,
+            service: fleetService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => EcosystemProvider(
+            repository: ecosystemRepository,
+            service: ecosystemService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => MaintenanceProvider(
+            repository: maintenanceRepository,
+            service: maintenanceService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => RouteAnalyticsProvider(
+            repository: routeAnalyticsRepository,
+            service: routeAnalyticsService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AdminProvider(
+            repository: adminRepository,
+            service: adminService,
+          ),
+        ),
       ],
       child: const MyApp(),
     ),
@@ -186,15 +280,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-
+    final themeProvider = context.watch<ThemeProvider>();
     return MaterialApp(
       title: 'EVHub',
       debugShowCheckedModeBanner: false,
       themeMode: themeProvider.themeMode,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      initialRoute: AppRoutes.splash,
+      theme: AppTheme.lightTheme(themeProvider.currentBrandColor),
+      darkTheme: AppTheme.darkTheme(themeProvider.currentBrandColor),
+      home: const SplashScreen(),
       onGenerateRoute: AppRoutes.generateRoute,
     );
   }

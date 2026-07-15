@@ -22,6 +22,7 @@ class WalletProvider extends ChangeNotifier {
 
   // ─── Getters ───────────────────────────────────────────────────────────────
 
+  WalletModel? get wallet => _wallet;
   double get balance => _wallet?.balance ?? 0.0;
   String get currency => _wallet?.currency ?? 'INR';
   List<TransactionModel> get transactions => List.unmodifiable(_transactions);

@@ -48,8 +48,8 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!mounted) return;
 
     if (success) {
-      // Clear navigation stack and route to home
-      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+      // Navigate to vehicle onboarding to set dynamic theme
+      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.vehicleOnboarding, (route) => false);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

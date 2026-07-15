@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 class AppTheme {
-  static ThemeData get lightTheme {
+  static ThemeData lightTheme([Color primaryColor = AppColors.primaryGreen]) {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      colorScheme: const ColorScheme.light(
-        primary: AppColors.primaryPurple,
-        secondary: AppColors.primaryCyan,
-        tertiary: AppColors.accentGreen,
+      colorScheme: ColorScheme.light(
+        primary: primaryColor,
+        secondary: AppColors.primaryBlue,
+        tertiary: AppColors.accentCyan,
         background: AppColors.lightBackground,
         surface: AppColors.lightSurface,
         onPrimary: Colors.white,
@@ -38,9 +38,9 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primaryPurple,
+          backgroundColor: primaryColor,
           foregroundColor: Colors.white,
-          elevation: 2,
+          elevation: 4,
           minimumSize: const Size.fromHeight(56),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -66,7 +66,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primaryPurple, width: 2),
+          borderSide: BorderSide(color: primaryColor, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -85,21 +85,21 @@ class AppTheme {
     );
   }
 
-  static ThemeData get darkTheme {
+  static ThemeData darkTheme([Color primaryColor = AppColors.primaryGreen]) {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      colorScheme: const ColorScheme.dark(
-        primary: AppColors.primaryCyan,
-        secondary: AppColors.primaryPurple,
-        tertiary: AppColors.accentGreen,
-        background: AppColors.darkBackground,
-        surface: AppColors.darkSurface,
+      colorScheme: ColorScheme.dark(
+        primary: primaryColor,
+        secondary: AppColors.primaryBlue,
+        tertiary: AppColors.accentCyan,
+        background: AppColors.background,
+        surface: AppColors.card,
         onPrimary: Colors.black,
         onSecondary: Colors.white,
         error: AppColors.dangerRed,
       ),
-      scaffoldBackgroundColor: AppColors.darkBackground,
+      scaffoldBackgroundColor: AppColors.background,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -112,18 +112,18 @@ class AppTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        color: AppColors.darkSurfaceCard,
+        color: AppColors.card,
         elevation: 4,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
-          side: BorderSide(color: AppColors.darkSurface.withOpacity(0.5), width: 1),
+          side: BorderSide(color: AppColors.glassBorder(), width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primaryCyan,
-          foregroundColor: Colors.black,
-          elevation: 4,
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 6,
           minimumSize: const Size.fromHeight(56),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -137,7 +137,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.darkSurface,
+        fillColor: AppColors.glassFill(),
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -149,7 +149,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primaryCyan, width: 2),
+          borderSide: BorderSide(color: primaryColor, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

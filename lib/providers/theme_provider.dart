@@ -1,15 +1,50 @@
 import 'package:flutter/material.dart';
 import '../services/storage_service.dart';
+import '../core/theme/app_colors.dart';
 
 class ThemeProvider extends ChangeNotifier {
   final StorageService _storageService;
   late ThemeMode _themeMode;
+  Color _currentBrandColor = AppColors.primaryGreen;
 
   ThemeProvider(this._storageService) {
     _loadTheme();
   }
 
   ThemeMode get themeMode => _themeMode;
+  Color get currentBrandColor => _currentBrandColor;
+
+  void setBrandTheme(String brand) {
+    switch (brand.toLowerCase()) {
+      case 'tata':
+        _currentBrandColor = AppColors.brandTata;
+        break;
+      case 'mg':
+        _currentBrandColor = AppColors.brandMG;
+        break;
+      case 'mahindra':
+        _currentBrandColor = AppColors.brandMahindra;
+        break;
+      case 'byd':
+        _currentBrandColor = AppColors.brandBYD;
+        break;
+      case 'hyundai':
+        _currentBrandColor = AppColors.brandHyundai;
+        break;
+      case 'kia':
+        _currentBrandColor = AppColors.brandKia;
+        break;
+      case 'bmw':
+        _currentBrandColor = AppColors.brandBMW;
+        break;
+      case 'mercedes':
+        _currentBrandColor = AppColors.brandMercedes;
+        break;
+      default:
+        _currentBrandColor = AppColors.primaryGreen;
+    }
+    notifyListeners();
+  }
 
   bool get isDarkMode {
     if (_themeMode == ThemeMode.system) {

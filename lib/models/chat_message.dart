@@ -6,6 +6,10 @@ class ChatMessage {
   final String message;
   final DateTime timestamp;
   final List<String>? suggestedPrompts;
+  
+  // Phase 5 Module 6: AI Charging Assistant Memory
+  final String? contextTag; // e.g. "trip_planning", "battery_health"
+  final Map<String, dynamic>? memoryMetadata;
 
   const ChatMessage({
     required this.id,
@@ -13,6 +17,8 @@ class ChatMessage {
     required this.message,
     required this.timestamp,
     this.suggestedPrompts,
+    this.contextTag,
+    this.memoryMetadata,
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -25,6 +31,8 @@ class ChatMessage {
       suggestedPrompts: data['suggestedPrompts'] != null
           ? List<String>.from(data['suggestedPrompts'])
           : null,
+      contextTag: data['contextTag'],
+      memoryMetadata: data['memoryMetadata'] as Map<String, dynamic>?,
     );
   }
 
@@ -34,6 +42,8 @@ class ChatMessage {
       'message': message,
       'timestamp': Timestamp.fromDate(timestamp),
       if (suggestedPrompts != null) 'suggestedPrompts': suggestedPrompts,
+      if (contextTag != null) 'contextTag': contextTag,
+      if (memoryMetadata != null) 'memoryMetadata': memoryMetadata,
     };
   }
 }

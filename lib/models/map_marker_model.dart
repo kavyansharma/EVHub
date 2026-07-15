@@ -6,6 +6,10 @@ class MapMarkerModel {
   final double longitude;
   final MarkerType type;
   final String? iconPath;
+  final String network;
+  final double rating;
+  final String power;
+  final String availableStalls;
 
   const MapMarkerModel({
     required this.id,
@@ -15,6 +19,10 @@ class MapMarkerModel {
     required this.longitude,
     required this.type,
     this.iconPath,
+    this.network = 'Unknown',
+    this.rating = 4.5,
+    this.power = '50kW',
+    this.availableStalls = '3/5',
   });
 }
 

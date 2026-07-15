@@ -4,7 +4,8 @@ import '../../screens/onboarding/onboarding_screen.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/auth/signup_screen.dart';
 import '../../screens/auth/forgot_password_screen.dart';
-import '../../screens/home/home_screen.dart';
+import '../../screens/onboarding/vehicle_onboarding_screen.dart';
+import '../../screens/main_navigation_screen.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -12,6 +13,7 @@ class AppRoutes {
   static const String login = '/login';
   static const String signup = '/signup';
   static const String forgotPassword = '/forgot_password';
+  static const String vehicleOnboarding = '/vehicle_onboarding';
   static const String home = '/home';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -26,8 +28,10 @@ class AppRoutes {
         return _buildFadeRoute(const SignupScreen());
       case forgotPassword:
         return _buildFadeRoute(const ForgotPasswordScreen());
+      case vehicleOnboarding:
+        return _buildFadeRoute(const VehicleOnboardingScreen());
       case home:
-        return _buildFadeRoute(const HomeScreen());
+        return _buildFadeRoute(const MainNavigationScreen());
       default:
         return MaterialPageRoute(
           builder: (_) => Scaffold(

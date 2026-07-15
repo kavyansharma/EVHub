@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+enum Role { user, admin, fleetManager }
+
 class UserModel {
   final String id;
   final String email;
@@ -7,6 +9,7 @@ class UserModel {
   final String? avatarUrl;
   final bool isGuest;
   final double walletBalance;
+  final Role role; // Phase 5 Module 14: Super Admin Role
 
   const UserModel({
     required this.id,
@@ -15,6 +18,7 @@ class UserModel {
     this.avatarUrl,
     this.isGuest = false,
     this.walletBalance = 0.0,
+    this.role = Role.user,
   });
 
   UserModel copyWith({
@@ -24,6 +28,7 @@ class UserModel {
     String? avatarUrl,
     bool? isGuest,
     double? walletBalance,
+    Role? role,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -32,6 +37,7 @@ class UserModel {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       isGuest: isGuest ?? this.isGuest,
       walletBalance: walletBalance ?? this.walletBalance,
+      role: role ?? this.role,
     );
   }
 
@@ -43,6 +49,7 @@ class UserModel {
       'avatarUrl': avatarUrl,
       'isGuest': isGuest,
       'walletBalance': walletBalance,
+      'role': role.name,
     };
   }
 
@@ -54,6 +61,7 @@ class UserModel {
       avatarUrl: json['avatarUrl'] as String?,
       isGuest: (json['isGuest'] ?? false) as bool,
       walletBalance: (json['walletBalance'] ?? 0.0) as double,
+      role: _roleFromString(json['role'] as String?),
     );
   }
 
@@ -64,6 +72,7 @@ class UserModel {
       'name': name,
       'avatarUrl': avatarUrl,
       'isGuest': isGuest,
+      'role': role.name,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
@@ -78,6 +87,7 @@ class UserModel {
       avatarUrl: data['avatarUrl'] as String?,
       isGuest: (data['isGuest'] ?? false) as bool,
       walletBalance: (data['walletBalance'] ?? 0.0).toDouble(),
+      role: _roleFromString(data['role']),
     );
   }
 
@@ -89,6 +99,13 @@ class UserModel {
       avatarUrl: null,
       isGuest: true,
       walletBalance: 1250.0,
+      role: Role.user,
     );
+  }
+
+  static Role _roleFromString(String? str) {
+    if (str == 'admin') return Role.admin;
+    if (str == 'fleetManager') return Role.fleetManager;
+    return Role.user;
   }
 }
