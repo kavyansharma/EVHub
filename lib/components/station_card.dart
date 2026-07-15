@@ -108,7 +108,7 @@ class StationCard extends StatelessWidget {
                     // Pricing
                     _buildSpecItem(
                       context,
-                      Icons.monetization_on_rounded,
+                      Icons.currency_rupee_rounded,
                       '${AppFormatters.formatCurrency(station.pricePerKWh)}/kWh',
                       'Rate',
                     ),

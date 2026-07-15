@@ -4,9 +4,6 @@ class AppConstants {
   static const String keyFirstLaunch = 'is_first_launch';
   static const String keyRememberMe = 'remember_me';
   static const String keyRememberedEmail = 'remembered_email';
-  static const String keyRememberedPassword = 'remembered_password';
-  static const String keyGuestSession = 'is_guest_session';
-  static const String keyUserSession = 'user_session';
 
   // App Metadata
   static const String appName = 'EVHub';
@@ -14,4 +11,13 @@ class AppConstants {
 
   // Visual Assets
   static const String splashLogoText = 'EVHUB';
+
+  // Firestore Collection Names
+  static const String colUsers = 'users';
+  static const String colWallets = 'wallets';
+  static const String colTransactions = 'transactions';
+  static const String colFavorites = 'favorites';
+  static const String colChargingHistory = 'charging_history';
+  static const String colTripHistory = 'trip_history';
+  static const String colStations = 'stations';
 }

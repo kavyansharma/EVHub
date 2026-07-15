@@ -2,7 +2,8 @@ import 'package:intl/intl.dart';
 
 class AppFormatters {
   static final NumberFormat _currencyFormatter = NumberFormat.currency(
-    symbol: '\$',
+    locale: 'en_IN',
+    symbol: '₹',
     decimalDigits: 2,
   );
 
@@ -14,7 +15,7 @@ class AppFormatters {
     return '${kW.toStringAsFixed(0)} kW';
   }
 
-  static String formatDistance(double km, {bool useMiles = true}) {
+  static String formatDistance(double km, {bool useMiles = false}) {
     if (useMiles) {
       final miles = km * 0.621371;
       return '${miles.toStringAsFixed(1)} mi';

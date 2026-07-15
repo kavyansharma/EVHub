@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'repositories/auth_repository.dart';
+import 'repositories/user_repository.dart';
 import 'services/auth_service.dart';
 import 'services/storage_service.dart';
 
@@ -16,9 +17,11 @@ void main() async {
   final storageService = await StorageService.init();
 
   // 2. Initialize repositories
+  final userRepository = UserRepositoryImpl();
   final authRepository = AuthRepositoryImpl(
-    authService: await AuthService.init(),
+    authService: AuthService(),
     storageService: storageService,
+    userRepository: userRepository,
   );
 
   runApp(

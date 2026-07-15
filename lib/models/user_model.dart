@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class UserModel {
   final String id;
   final String email;
@@ -6,7 +8,7 @@ class UserModel {
   final bool isGuest;
   final double walletBalance;
 
-  UserModel({
+  const UserModel({
     required this.id,
     required this.email,
     required this.name,
@@ -55,14 +57,38 @@ class UserModel {
     );
   }
 
-  factory UserModel.guest() {
+  /// Firestore serialization — stores user profile in /users/{uid}
+  Map<String, dynamic> toFirestore() {
+    return {
+      'email': email,
+      'name': name,
+      'avatarUrl': avatarUrl,
+      'isGuest': isGuest,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  /// Deserialize from a Firestore document snapshot.
+  factory UserModel.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
     return UserModel(
+      id: doc.id,
+      email: data['email'] ?? '',
+      name: data['name'] ?? 'EV Driver',
+      avatarUrl: data['avatarUrl'] as String?,
+      isGuest: (data['isGuest'] ?? false) as bool,
+      walletBalance: (data['walletBalance'] ?? 0.0).toDouble(),
+    );
+  }
+
+  factory UserModel.guest() {
+    return const UserModel(
       id: 'guest_user',
       email: 'guest@evhub.com',
       name: 'Guest Driver',
       avatarUrl: null,
       isGuest: true,
-      walletBalance: 0.0,
+      walletBalance: 1250.0,
     );
   }
 }

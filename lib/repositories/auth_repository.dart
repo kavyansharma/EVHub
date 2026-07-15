@@ -1,14 +1,24 @@
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
+import 'user_repository.dart';
 
 abstract class AuthRepository {
-  Future<UserModel> login({required String email, required String password, bool rememberMe = false});
-  Future<UserModel> signup({required String email, required String password, required String name});
+  Future<UserModel> login({
+    required String email,
+    required String password,
+    bool rememberMe = false,
+  });
+  Future<UserModel> signup({
+    required String email,
+    required String password,
+    required String name,
+  });
   Future<void> forgotPassword(String email);
   Future<UserModel?> restoreSession();
   Future<void> logout();
   Future<UserModel> startGuestSession();
+  Future<UserModel?> googleSignIn();
 
   // Remember Me helpers
   bool isRememberMeEnabled();
@@ -19,12 +29,17 @@ abstract class AuthRepository {
 class AuthRepositoryImpl implements AuthRepository {
   final AuthService _authService;
   final StorageService _storageService;
+  final UserRepository _userRepository;
 
   AuthRepositoryImpl({
     required AuthService authService,
     required StorageService storageService,
+    required UserRepository userRepository,
   })  : _authService = authService,
-        _storageService = storageService;
+        _storageService = storageService,
+        _userRepository = userRepository;
+
+  // ─── Login ─────────────────────────────────────────────────────────────────
 
   @override
   Future<UserModel> login({
@@ -32,27 +47,34 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
     bool rememberMe = false,
   }) async {
-    try {
-      final user = await _authService.login(email: email, password: password);
-      
-      // Store session
-      await _storageService.setUserSession(user);
-      await _storageService.setGuestSession(false);
-      await _storageService.setRememberMe(rememberMe);
+    final credential = await _authService.signInWithEmailAndPassword(
+      email,
+      password,
+    );
+    final fbUser = credential.user!;
+    final user = UserModel(
+      id: fbUser.uid,
+      email: fbUser.email ?? email,
+      name: fbUser.displayName ?? 'EV Driver',
+      avatarUrl: fbUser.photoURL,
+      isGuest: false,
+    );
 
-      if (rememberMe) {
-        await _storageService.setRememberedEmail(email);
-        await _storageService.setRememberedPassword(password);
-      } else {
-        await _storageService.removeRememberedEmail();
-        await _storageService.removeRememberedPassword();
-      }
+    // Ensure Firestore profile exists.
+    await _userRepository.createUserDocument(user);
 
-      return user;
-    } catch (e) {
-      rethrow;
+    // Remember Me — store email only.
+    await _storageService.setRememberMe(rememberMe);
+    if (rememberMe) {
+      await _storageService.setRememberedEmail(email);
+    } else {
+      await _storageService.removeRememberedEmail();
     }
+
+    return user;
   }
+
+  // ─── Signup ────────────────────────────────────────────────────────────────
 
   @override
   Future<UserModel> signup({
@@ -60,68 +82,105 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
     required String name,
   }) async {
-    try {
-      final user = await _authService.signup(email: email, password: password, name: name);
-      // Automatically log them in on sign up
-      await _storageService.setUserSession(user);
-      await _storageService.setGuestSession(false);
-      return user;
-    } catch (e) {
-      rethrow;
-    }
+    final credential = await _authService.createUserWithEmailAndPassword(
+      email,
+      password,
+      name,
+    );
+    final fbUser = credential.user!;
+    final user = UserModel(
+      id: fbUser.uid,
+      email: fbUser.email ?? email,
+      name: name.trim(),
+      avatarUrl: fbUser.photoURL,
+      isGuest: false,
+    );
+
+    // Create Firestore user document + wallet.
+    await _userRepository.createUserDocument(user);
+    return user;
   }
+
+  // ─── Forgot Password ───────────────────────────────────────────────────────
 
   @override
   Future<void> forgotPassword(String email) async {
-    try {
-      await _authService.requestPasswordReset(email);
-    } catch (e) {
-      rethrow;
-    }
+    await _authService.sendPasswordResetEmail(email);
   }
+
+  // ─── Restore Session ───────────────────────────────────────────────────────
 
   @override
   Future<UserModel?> restoreSession() async {
-    // 1. Check if guest session was active
-    if (_storageService.isGuestSession()) {
+    final fbUser = _authService.currentUser;
+    if (fbUser == null) return null;
+
+    if (fbUser.isAnonymous) {
       return UserModel.guest();
     }
 
-    // 2. Check if user session exists
-    final savedUser = _storageService.getUserSession();
-    if (savedUser != null) {
-      return savedUser;
-    }
+    // Try to fetch profile from Firestore.
+    final saved = await _userRepository.getUserDocument(fbUser.uid);
+    if (saved != null) return saved;
 
-    return null;
+    // Fallback to Firebase Auth data.
+    return UserModel(
+      id: fbUser.uid,
+      email: fbUser.email ?? '',
+      name: fbUser.displayName ?? 'EV Driver',
+      avatarUrl: fbUser.photoURL,
+      isGuest: false,
+    );
   }
+
+  // ─── Logout ────────────────────────────────────────────────────────────────
 
   @override
   Future<void> logout() async {
-    await _storageService.clearUserSession();
-    await _storageService.setGuestSession(false);
+    await _authService.signOut();
+    await _storageService.setRememberMe(false);
+    await _storageService.removeRememberedEmail();
   }
+
+  // ─── Guest / Anonymous ─────────────────────────────────────────────────────
 
   @override
   Future<UserModel> startGuestSession() async {
-    final guest = UserModel.guest();
-    await _storageService.setGuestSession(true);
-    await _storageService.clearUserSession();
-    return guest;
+    await _authService.signInAnonymously();
+    return UserModel.guest();
   }
 
+  // ─── Google Sign-In ────────────────────────────────────────────────────────
+
   @override
-  bool isRememberMeEnabled() {
-    return _storageService.getRememberMe();
+  Future<UserModel?> googleSignIn() async {
+    final credential = await _authService.signInWithGoogle();
+    if (credential == null) return null;
+
+    final fbUser = credential.user!;
+    final user = UserModel(
+      id: fbUser.uid,
+      email: fbUser.email ?? '',
+      name: fbUser.displayName ?? 'EV Driver',
+      avatarUrl: fbUser.photoURL,
+      isGuest: false,
+    );
+
+    await _userRepository.createUserDocument(user);
+    return user;
   }
+
+  // ─── Remember Me ───────────────────────────────────────────────────────────
+
+  @override
+  bool isRememberMeEnabled() => _storageService.getRememberMe();
 
   @override
   Map<String, String>? getRememberedCredentials() {
     if (!isRememberMeEnabled()) return null;
     final email = _storageService.getRememberedEmail();
-    final pwd = _storageService.getRememberedPassword();
-    if (email != null && pwd != null) {
-      return {'email': email, 'password': pwd};
+    if (email != null) {
+      return {'email': email};
     }
     return null;
   }
@@ -130,6 +189,5 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<void> clearRememberedCredentials() async {
     await _storageService.setRememberMe(false);
     await _storageService.removeRememberedEmail();
-    await _storageService.removeRememberedPassword();
   }
 }

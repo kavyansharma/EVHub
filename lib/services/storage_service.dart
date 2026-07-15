@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/app_constants.dart';
-import '../models/user_model.dart';
 
+/// Local persistence service (SharedPreferences).
+/// Handles: theme, onboarding, remember-me credentials.
+/// Firebase Auth now owns the user session — no user JSON stored here.
 class StorageService {
   final SharedPreferences _prefs;
 
@@ -31,7 +32,7 @@ class StorageService {
     return await _prefs.setBool(AppConstants.keyFirstLaunch, false);
   }
 
-  // --- Remember Login State ---
+  // --- Remember Me (stores email only, never password) ---
   bool getRememberMe() {
     return _prefs.getBool(AppConstants.keyRememberMe) ?? false;
   }
@@ -52,52 +53,11 @@ class StorageService {
     return await _prefs.remove(AppConstants.keyRememberedEmail);
   }
 
-  String? getRememberedPassword() {
-    return _prefs.getString(AppConstants.keyRememberedPassword);
-  }
-
-  Future<bool> setRememberedPassword(String password) async {
-    return await _prefs.setString(AppConstants.keyRememberedPassword, password);
-  }
-
-  Future<bool> removeRememberedPassword() async {
-    return await _prefs.remove(AppConstants.keyRememberedPassword);
-  }
-
-  // --- Session Management ---
-  bool isGuestSession() {
-    return _prefs.getBool(AppConstants.keyGuestSession) ?? false;
-  }
-
-  Future<bool> setGuestSession(bool isGuest) async {
-    return await _prefs.setBool(AppConstants.keyGuestSession, isGuest);
-  }
-
-  UserModel? getUserSession() {
-    final userJson = _prefs.getString(AppConstants.keyUserSession);
-    if (userJson == null) return null;
-    try {
-      final Map<String, dynamic> userMap = json.decode(userJson);
-      return UserModel.fromJson(userMap);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<bool> setUserSession(UserModel user) async {
-    final userJson = json.encode(user.toJson());
-    return await _prefs.setString(AppConstants.keyUserSession, userJson);
-  }
-
-  Future<bool> clearUserSession() async {
-    return await _prefs.remove(AppConstants.keyUserSession);
-  }
-
+  /// Clears all preferences except theme and first-launch state.
   Future<void> clearAll() async {
     final theme = getThemeMode();
     final firstLaunch = isFirstLaunch();
     await _prefs.clear();
-    // Maintain settings
     await setThemeMode(theme);
     if (!firstLaunch) {
       await setFirstLaunchCompleted();

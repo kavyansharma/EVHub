@@ -21,13 +21,17 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentTab = 0;
 
+  // Selected vehicle for Indian EV spec display
+  int _selectedVehicleIndex = 0;
+  bool _locationPermissionGranted = false; // Simulated GPS permission state
+
   // Find Chargers state
   String _chargerSearchQuery = '';
   String _selectedFilter = 'All'; // 'All', 'Ultra Fast', 'Tesla Compatible'
 
   // Trip Planner state
-  final _originController = TextEditingController(text: 'San Francisco');
-  final _destController = TextEditingController(text: 'Los Angeles');
+  final _originController = TextEditingController(text: 'Delhi');
+  final _destController = TextEditingController(text: 'Jaipur');
   bool _tripCalculated = false;
 
   // AI Assistant state
@@ -238,6 +242,80 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==========================================
   // TAB 1: DASHBOARD
   // ==========================================
+  void _showAddFundsBottomSheet() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        final paymentMethods = [
+          {'name': 'UPI (Google Pay)', 'icon': Icons.account_balance_wallet_rounded},
+          {'name': 'PhonePe', 'icon': Icons.payment_rounded},
+          {'name': 'Paytm', 'icon': Icons.account_balance_rounded},
+          {'name': 'BHIM UPI', 'icon': Icons.qr_code_scanner_rounded},
+          {'name': 'Debit Card', 'icon': Icons.credit_card_rounded},
+          {'name': 'Credit Card', 'icon': Icons.credit_card_rounded},
+          {'name': 'Net Banking', 'icon': Icons.account_balance_rounded},
+        ];
+
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select Payment Method',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: paymentMethods.length,
+                  itemBuilder: (context, index) {
+                    final method = paymentMethods[index];
+                    return ListTile(
+                      leading: Icon(method['icon'] as IconData, color: isDark ? AppColors.primaryCyan : AppColors.primaryPurple),
+                      title: Text(method['name'] as String),
+                      onTap: () {
+                        Navigator.pop(context);
+                        authProvider.topUpWallet(1000.0); // Simulated Top-up of 1000 INR
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Simulated payment of ₹1,000.00 via ${method['name']} successful! Wallet balance updated.'),
+                            backgroundColor: AppColors.accentGreen,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEvSpecItem(String label, String value, IconData icon) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      children: [
+        Icon(icon, color: isDark ? AppColors.primaryCyan : AppColors.primaryPurple, size: 20),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ],
+    );
+  }
+
   Widget _buildDashboardTab() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authProvider = Provider.of<AuthProvider>(context);
@@ -284,6 +362,61 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 20),
+
+          // Simulated Location Permission & Map Location Banner
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _locationPermissionGranted = !_locationPermissionGranted;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(_locationPermissionGranted
+                      ? 'Location Permission Granted! Centered map on current GPS location in India.'
+                      : 'Location Permission Denied. Defaulted map location to New Delhi.'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+            child: GlassContainer(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              borderRadius: 16,
+              child: Row(
+                children: [
+                  Icon(
+                    _locationPermissionGranted ? Icons.gps_fixed_rounded : Icons.gps_off_rounded,
+                    color: _locationPermissionGranted ? AppColors.accentGreen : AppColors.dangerRed,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _locationPermissionGranted
+                              ? 'Map Location: India (GPS Active)'
+                              : 'Map Location: India (GPS Denied)',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        Text(
+                          _locationPermissionGranted
+                              ? 'Using live device location coordinates.'
+                              : 'Defaulted to New Delhi center (28.6139° N, 77.2090° E).',
+                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.swap_horiz_rounded,
+                    size: 18,
+                    color: isDark ? Colors.white70 : Colors.black54,
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
 
           // Universal Wallet Section
@@ -296,14 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
           WalletCard(
             balance: user?.walletBalance ?? 0.0,
-            onAddFunds: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Simulated funding request initiated! Balance updated by +\$50.00'),
-                  backgroundColor: AppColors.accentGreen,
-                ),
-              );
-            },
+            onAddFunds: _showAddFundsBottomSheet,
             onHistory: () {
               showModalBottomSheet(
                 context: context,
@@ -323,9 +449,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 16),
-                        _buildTransactionItem('EVHub Supercharger Alpha', '-\$14.25', 'Today, 10:14 AM', true),
-                        _buildTransactionItem('Wallet Top-up', '+\$50.00', 'Yesterday, 6:00 PM', false),
-                        _buildTransactionItem('Greenway Rapid Charging', '-\$8.80', 'Oct 12, 2:45 PM', true),
+                        _buildTransactionItem('Tata Power EZ Charge (CP, Delhi)', '-₹1,140.00', '15/07/2026 10:14 AM', true),
+                        _buildTransactionItem('Wallet Top-up', '+₹1,250.00', '14/07/2026 06:00 PM', false),
+                        _buildTransactionItem('Statiq Charging Hub (Gurugram)', '-₹704.00', '12/10/2026 02:45 PM', true),
                       ],
                     ),
                   );
@@ -390,6 +516,131 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           
+          const SizedBox(height: 28),
+          Text(
+            'My EV & Connector Compatibility',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          GlassContainer(
+            padding: const EdgeInsets.all(16),
+            borderRadius: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Vehicle:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    DropdownButton<int>(
+                      value: _selectedVehicleIndex,
+                      dropdownColor: isDark ? AppColors.darkSurfaceCard : Colors.white,
+                      items: List.generate(MockData.vehicles.length, (index) {
+                        return DropdownMenuItem(
+                          value: index,
+                          child: Text(MockData.vehicles[index].name),
+                        );
+                      }),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            _selectedVehicleIndex = val;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildEvSpecItem('Battery', '${MockData.vehicles[_selectedVehicleIndex].batteryCapacity} kWh', Icons.battery_charging_full_rounded),
+                    _buildEvSpecItem('Range', '${MockData.vehicles[_selectedVehicleIndex].realRange} km', Icons.bolt_rounded),
+                    _buildEvSpecItem('DC Speed', '${MockData.vehicles[_selectedVehicleIndex].chargingSpeed} kW', Icons.flash_on_rounded),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Connector Compatibility:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: ['CCS2', 'Type 2 AC', 'Bharat AC001', 'Bharat DC001'].map((connector) {
+                    final isCompatible = MockData.vehicles[_selectedVehicleIndex].compatibleConnectors.contains(connector);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isCompatible
+                            ? AppColors.accentGreen.withOpacity(0.12)
+                            : (isDark ? Colors.white10 : Colors.black12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isCompatible ? AppColors.accentGreen.withOpacity(0.3) : Colors.transparent,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isCompatible ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                            size: 14,
+                            color: isCompatible ? AppColors.accentGreen : Colors.grey,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            connector,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isCompatible ? (isDark ? Colors.white : Colors.black) : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 28),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Nearby Chargers',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _currentTab = 1),
+                child: const Text('View All'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Show top 3 Indian chargers on the Dashboard
+          ...MockData.stations.take(3).map((st) {
+            return StationCard(
+              station: st,
+              onTap: () => _showStationDetails(st),
+            );
+          }),
+
           const SizedBox(height: 32),
           // Logout Button
           ElevatedButton(
@@ -642,7 +893,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       _buildDetailSpecBox('Max Power', AppFormatters.formatPower(st.power), Icons.flash_on_rounded),
                       _buildDetailSpecBox('Plug Count', '${st.totalStalls} plugs', Icons.power_rounded),
-                      _buildDetailSpecBox('Cost', '${AppFormatters.formatCurrency(st.pricePerKWh)}/kWh', Icons.attach_money_rounded),
+                      _buildDetailSpecBox('Cost', '${AppFormatters.formatCurrency(st.pricePerKWh)}/kWh', Icons.currency_rupee_rounded),
                     ],
                   ),
                   const SizedBox(height: 24),

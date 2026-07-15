@@ -154,4 +154,11 @@ class AuthProvider extends ChangeNotifier {
   Map<String, String>? getRememberedCredentials() {
     return _authRepository.getRememberedCredentials();
   }
+
+  void topUpWallet(double amount) {
+    if (_user != null) {
+      _user = _user!.copyWith(walletBalance: _user!.walletBalance + amount);
+      notifyListeners();
+    }
+  }
 }

@@ -1,19 +1,15 @@
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../models/user_model.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
+/// Firebase-backed authentication service.
+/// Wraps FirebaseAuth and GoogleSignIn.
+/// Static [validateEmail] and [validatePassword] are kept for UI validation.
 class AuthService {
-  final SharedPreferences _prefs;
-  static const String _keyUsersList = 'registered_users_list';
+  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  AuthService(this._prefs);
+  // ─── Static validators (used by auth screens) ─────────────────────────────
 
-  static Future<AuthService> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    return AuthService(prefs);
-  }
-
-  // Helper validation methods
   static bool validateEmail(String email) {
     final emailRegExp = RegExp(
       r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
@@ -22,114 +18,78 @@ class AuthService {
   }
 
   static bool validatePassword(String password) {
-    // Password must be at least 6 characters
     return password.trim().length >= 6;
   }
 
-  // Retrieve all simulated users from local database
-  Map<String, Map<String, dynamic>> _getUsersDatabase() {
-    final rawJson = _prefs.getString(_keyUsersList);
-    if (rawJson == null) {
-      // Default mock users
-      return {
-        'admin@evhub.com': {
-          'id': 'user_admin',
-          'email': 'admin@evhub.com',
-          'password': 'password123',
-          'name': 'Tesla Driver',
-          'walletBalance': 150.00,
-        },
-        'demo@evhub.com': {
-          'id': 'user_demo',
-          'email': 'demo@evhub.com',
-          'password': 'password123',
-          'name': 'EV Enthusiast',
-          'walletBalance': 50.00,
-        }
-      };
-    }
+  // ─── Auth state ────────────────────────────────────────────────────────────
+
+  User? get currentUser => _firebaseAuth.currentUser;
+
+  Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
+
+  // ─── Email / Password ─────────────────────────────────────────────────────
+
+  Future<UserCredential> signInWithEmailAndPassword(
+    String email,
+    String password,
+  ) async {
+    return await _firebaseAuth.signInWithEmailAndPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+  }
+
+  Future<UserCredential> createUserWithEmailAndPassword(
+    String email,
+    String password,
+    String displayName,
+  ) async {
+    final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+    // Update display name immediately after creation.
+    await credential.user?.updateDisplayName(displayName.trim());
+    return credential;
+  }
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _firebaseAuth.sendPasswordResetEmail(
+      email: email.trim().toLowerCase(),
+    );
+  }
+
+  // ─── Google Sign-In ───────────────────────────────────────────────────────
+
+  Future<UserCredential?> signInWithGoogle() async {
     try {
-      final Map<String, dynamic> decoded = json.decode(rawJson);
-      return decoded.map((key, value) => MapEntry(key, Map<String, dynamic>.from(value)));
-    } catch (_) {
-      return {};
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return null; // User cancelled
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      return await _firebaseAuth.signInWithCredential(credential);
+    } catch (e) {
+      throw Exception('Google Sign-In failed: ${e.toString()}');
     }
   }
 
-  // Save changes to local database
-  Future<void> _saveUsersDatabase(Map<String, Map<String, dynamic>> db) async {
-    await _prefs.setString(_keyUsersList, json.encode(db));
+  // ─── Anonymous / Guest ────────────────────────────────────────────────────
+
+  Future<UserCredential> signInAnonymously() async {
+    return await _firebaseAuth.signInAnonymously();
   }
 
-  // Simulate authentication login
-  Future<UserModel> login({required String email, required String password}) async {
-    await Future.delayed(const Duration(seconds: 1)); // Simulate network latency
+  // ─── Sign Out ─────────────────────────────────────────────────────────────
 
-    final db = _getUsersDatabase();
-    final normalizedEmail = email.trim().toLowerCase();
-
-    if (!db.containsKey(normalizedEmail)) {
-      throw Exception('User account not found. Please sign up.');
-    }
-
-    final userRecord = db[normalizedEmail]!;
-    if (userRecord['password'] != password) {
-      throw Exception('Incorrect password. Please try again.');
-    }
-
-    return UserModel(
-      id: userRecord['id'],
-      email: userRecord['email'],
-      name: userRecord['name'],
-      walletBalance: (userRecord['walletBalance'] ?? 0.0) as double,
-      isGuest: false,
-    );
-  }
-
-  // Simulate registration signup
-  Future<UserModel> signup({
-    required String email,
-    required String password,
-    required String name,
-  }) async {
-    await Future.delayed(const Duration(seconds: 1)); // Simulate network latency
-
-    final db = _getUsersDatabase();
-    final normalizedEmail = email.trim().toLowerCase();
-
-    if (db.containsKey(normalizedEmail)) {
-      throw Exception('An account with this email already exists.');
-    }
-
-    final newId = 'user_${DateTime.now().millisecondsSinceEpoch}';
-    db[normalizedEmail] = {
-      'id': newId,
-      'email': normalizedEmail,
-      'password': password,
-      'name': name.trim(),
-      'walletBalance': 100.0, // Default welcome balance
-    };
-
-    await _saveUsersDatabase(db);
-
-    return UserModel(
-      id: newId,
-      email: normalizedEmail,
-      name: name.trim(),
-      walletBalance: 100.0,
-      isGuest: false,
-    );
-  }
-
-  // Simulate Password Reset request
-  Future<void> requestPasswordReset(String email) async {
-    await Future.delayed(const Duration(milliseconds: 800)); // Latency simulation
-    final db = _getUsersDatabase();
-    final normalizedEmail = email.trim().toLowerCase();
-
-    if (!db.containsKey(normalizedEmail)) {
-      throw Exception('No account found with this email.');
-    }
-    // Simulation: in production this triggers emails
+  Future<void> signOut() async {
+    await _googleSignIn.signOut();
+    await _firebaseAuth.signOut();
   }
 }
