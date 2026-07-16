@@ -1,3 +1,7 @@
+enum MarkerType { station, user, routePoint }
+
+enum MarkerStatus { available, busy, offline }
+
 class MapMarkerModel {
   final String id;
   final String title;
@@ -10,6 +14,17 @@ class MapMarkerModel {
   final double rating;
   final String power;
   final String availableStalls;
+  
+  // Premium Details added in V2/6.1
+  final MarkerStatus status;
+  final String? photoUrl;
+  final String? address;
+  final String? openStatus;
+  final String? price;
+  final int connectorCount;
+  final List<String> connectors;
+  final String powerType; // 'Fast', 'Ultra Fast', 'AC'
+  final String? openingHours;
 
   const MapMarkerModel({
     required this.id,
@@ -23,7 +38,14 @@ class MapMarkerModel {
     this.rating = 4.5,
     this.power = '50kW',
     this.availableStalls = '3/5',
+    this.status = MarkerStatus.available,
+    this.photoUrl,
+    this.address,
+    this.openStatus = 'Open',
+    this.price = '₹21/kWh',
+    this.connectorCount = 4,
+    this.connectors = const ['CCS2', 'Type 2'],
+    this.powerType = 'Fast',
+    this.openingHours = '24 Hours',
   });
 }
-
-enum MarkerType { station, user, routePoint }

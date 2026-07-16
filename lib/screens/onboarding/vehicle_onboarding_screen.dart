@@ -23,7 +23,7 @@ class _VehicleOnboardingScreenState extends State<VehicleOnboardingScreen> {
   String _connector = 'CCS2';
   double _batteryCapacity = 60.0;
   double _currentBattery = 80.0;
-  int _wheelSize = 18;
+  final int _wheelSize = 18;
   String _drivingStyle = 'Normal';
   
   final List<Map<String, dynamic>> _brands = [
