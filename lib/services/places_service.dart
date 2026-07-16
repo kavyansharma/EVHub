@@ -1,4 +1,4 @@
-import 'dart:math';
+import 'dart:math' as math;
 
 class PlaceModel {
   final String id;
@@ -21,20 +21,23 @@ class PlaceModel {
 }
 
 class PlacesService {
-  final Random _random = Random();
-
   Future<List<PlaceModel>> getNearbyPlaces(double lat, double lng) async {
     // Simulate network delay
-    await Future.delayed(const Duration(milliseconds: 300));
+    await Future.delayed(const Duration(milliseconds: 250));
 
-    final types = ['restaurant', 'cafe', 'shopping_mall', 'washroom', 'atm', 'hotel'];
+    // Seed Random with coordinates to ensure stable results for the same station
+    final seed = (lat * 100000 + lng * 100000).toInt().abs();
+    final random = math.Random(seed);
+
+    final types = ['restaurant', 'cafe', 'shopping_mall', 'washroom', 'atm', 'hotel', 'hospital'];
     final names = {
-      'restaurant': ['Haldiram\'s', 'Bikanervala', 'Sagar Ratna', 'Barbeque Nation', 'Pizza Hut'],
-      'cafe': ['Starbucks', 'Cafe Coffee Day', 'Blue Tokai', 'Third Wave Coffee'],
-      'shopping_mall': ['Pacific Mall', 'Select Citywalk', 'DLF Promenade', 'Phoenix Marketcity'],
-      'washroom': ['Public Restroom', 'Clean Toilet', 'Highway Rest Stop'],
-      'atm': ['HDFC ATM', 'SBI ATM', 'ICICI ATM', 'Axis Bank ATM'],
-      'hotel': ['Taj Hotel', 'Radisson Blu', 'Lemon Tree', 'Holiday Inn'],
+      'restaurant': ['Haldiram\'s', 'Bikanervala', 'Sagar Ratna', 'Barbeque Nation', 'Pizza Hut', 'Dhaba 11', 'The Spice Route'],
+      'cafe': ['Starbucks', 'Cafe Coffee Day', 'Blue Tokai Coffee Roasters', 'Third Wave Coffee', 'Chaayos', 'The Coffee Bean'],
+      'shopping_mall': ['Pacific Mall', 'Select Citywalk', 'DLF Promenade', 'Phoenix Marketcity', 'Nexus Mall'],
+      'washroom': ['Premium Public Restroom', 'Clean Toilet Lounge', 'Highway Rest Stop Washroom'],
+      'atm': ['HDFC Bank ATM', 'SBI ATM', 'ICICI Bank ATM', 'Axis Bank ATM', 'Yes Bank ATM'],
+      'hotel': ['Taj Palace', 'Radisson Blu Hotel', 'Lemon Tree Premier', 'Holiday Inn', 'The Leela', 'Hyatt Regency'],
+      'hospital': ['Max Super Speciality Hospital', 'Fortis Healthcare', 'Medanta Mediclinic', 'Apollo Clinic'],
     };
     
     final images = {
@@ -44,27 +47,38 @@ class PlacesService {
       'washroom': 'https://images.unsplash.com/photo-1628156106631-f92dcb4a9699?q=80&w=500&auto=format&fit=crop',
       'atm': 'https://images.unsplash.com/photo-1620714223084-8fcacc6dfd8d?q=80&w=500&auto=format&fit=crop',
       'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=500&auto=format&fit=crop',
+      'hospital': 'https://images.unsplash.com/photo-1586773860418-d3b3de97e663?q=80&w=500&auto=format&fit=crop',
     };
 
     List<PlaceModel> places = [];
     
-    for (int i = 0; i < 8; i++) {
-      final type = types[_random.nextInt(types.length)];
+    // Generate 6 to 10 unique amenities for this station
+    final numPlaces = 6 + random.nextInt(5);
+    for (int i = 0; i < numPlaces; i++) {
+      final type = types[random.nextInt(types.length)];
       final nameList = names[type]!;
-      final name = nameList[_random.nextInt(nameList.length)];
-      final distance = (_random.nextDouble() * 800) + 50; // 50m to 850m
-      final rating = 3.5 + (_random.nextDouble() * 1.5); // 3.5 to 5.0
+      final name = nameList[random.nextInt(nameList.length)];
       
+      // Compute realistic distance from coordinates
+      final distance = (random.nextDouble() * 700) + 80; // 80m to 780m
+      final rating = 3.8 + (random.nextDouble() * 1.2); // 3.8 to 5.0
+      final isOpen = random.nextDouble() > 0.15; // 85% chance of being open now
+
       places.add(PlaceModel(
-        id: 'place_$i',
+        id: 'place_${seed}_$i',
         name: name,
         type: type,
         distance: distance,
+        isOpen: isOpen,
         rating: rating,
         imageUrl: images[type]!,
       ));
     }
 
+    // Sort by distance
+    places.sort((a, b) => a.distance.compareTo(b.distance));
+
     return places;
   }
 }
+

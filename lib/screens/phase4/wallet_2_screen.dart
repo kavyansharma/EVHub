@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../../providers/wallet_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 
@@ -13,11 +15,12 @@ class Wallet2Screen extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Wallet & Payments', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('WALLET & PAYMENTS', style: TextStyle(letterSpacing: 2.0, fontSize: 16)),
         actions: [
           IconButton(icon: const Icon(Icons.help_outline), onPressed: () {}),
         ],
@@ -28,7 +31,7 @@ class Wallet2Screen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              AppColors.accentPurple.withOpacity(0.2),
+              AppColors.accent.withOpacity(0.08),
               AppColors.background,
             ],
             stops: const [0.0, 0.4],
@@ -38,26 +41,35 @@ class Wallet2Screen extends StatelessWidget {
           child: provider.isLoading
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-                  padding: const EdgeInsets.all(24.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildPremiumBalanceCard(provider, theme),
+                      _buildPremiumBalanceCard(provider, theme, context),
                       const SizedBox(height: 32),
                       
-                      const Text('Add Money', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'ADD MONEY INSTANTLY',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
+                      ),
                       const SizedBox(height: 16),
-                      _buildPaymentMethodsGrid(theme),
+                      _buildPaymentMethodsGrid(),
                       
                       const SizedBox(height: 32),
-                      const Text('Rewards & Offers', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'REWARDS & OFFERS',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
+                      ),
                       const SizedBox(height: 16),
-                      _buildRewardsList(theme),
+                      _buildRewardsList(),
                       
                       const SizedBox(height: 32),
-                      const Text('Recent Transactions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'TRANSACTION HISTORY',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
+                      ),
                       const SizedBox(height: 16),
-                      _buildTransactionList(theme),
+                      _buildTransactionList(),
                       
                       const SizedBox(height: 100),
                     ],
@@ -68,37 +80,33 @@ class Wallet2Screen extends StatelessWidget {
     );
   }
 
-  Widget _buildPremiumBalanceCard(WalletProvider provider, ThemeData theme) {
+  Widget _buildPremiumBalanceCard(WalletProvider provider, ThemeData theme, BuildContext context) {
     final balance = provider.wallet?.balance ?? 0.0;
     
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF9E00FF), Color(0xFF00D9FF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: AppColors.neonShadow(color: AppColors.accentPurple, blurRadius: 30),
+        gradient: AppColors.walletGradient,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: AppColors.neonShadow(color: AppColors.accent, blurRadius: 25),
       ),
       child: Stack(
         children: [
-          // Background pattern/glow
+          // Background accent bubbles
           Positioned(
-            right: -50,
-            top: -50,
+            right: -30,
+            top: -30,
             child: Container(
-              width: 200,
-              height: 200,
+              width: 140,
+              height: 140,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withOpacity(0.06),
               ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(32.0),
+            padding: const EdgeInsets.all(28.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -106,50 +114,82 @@ class Wallet2Screen extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'EVHub Universal Wallet',
-                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                      'EVHub Universal Pay',
+                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white24, width: 0.8),
                       ),
-                      child: const Text('Active', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: const Text('ACTIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
                     )
                   ],
                 ),
                 const SizedBox(height: 24),
-                const Text('Available Balance', style: TextStyle(color: Colors.white, fontSize: 14)),
+                const Text('Available Balance', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                const SizedBox(height: 2),
                 Text(
                   '₹${balance.toStringAsFixed(2)}',
-                  style: const TextStyle(fontSize: 56, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1),
+                  style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 28),
                 Row(
                   children: [
                     Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.add, color: AppColors.accentPurple),
-                        label: const Text('Top Up', style: TextStyle(color: AppColors.accentPurple, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: GestureDetector(
+                        onTap: () {
+                          final auth = context.read<AuthProvider>();
+                          provider.topUp(auth.user?.id ?? 'default_user', 500.0);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Added ₹500.00 successfully!'), backgroundColor: AppColors.secondary),
+                          );
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Top Up +₹500',
+                              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-                        label: const Text('Scan & Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white, width: 1.5),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: GestureDetector(
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Scanning charger QR code...')),
+                          );
+                        },
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: const Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.qr_code_scanner, color: Colors.white, size: 16),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Scan QR',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -163,14 +203,14 @@ class Wallet2Screen extends StatelessWidget {
     );
   }
 
-  Widget _buildPaymentMethodsGrid(ThemeData theme) {
+  Widget _buildPaymentMethodsGrid() {
     final methods = [
-      {'icon': Icons.account_balance, 'name': 'UPI'},
-      {'icon': Icons.g_mobiledata, 'name': 'GPay'},
-      {'icon': Icons.phone_android, 'name': 'PhonePe'},
-      {'icon': Icons.payment, 'name': 'Paytm'},
-      {'icon': Icons.credit_card, 'name': 'Cards'},
-      {'icon': Icons.account_balance_wallet, 'name': 'Net Bank'},
+      {'icon': HugeIcons.strokeRoundedPayment01, 'name': 'UPI'},
+      {'icon': HugeIcons.strokeRoundedGoogle, 'name': 'GPay'},
+      {'icon': HugeIcons.strokeRoundedSmartPhone02, 'name': 'PhonePe'},
+      {'icon': HugeIcons.strokeRoundedCreditCard, 'name': 'Cards'},
+      {'icon': HugeIcons.strokeRoundedBitcoinWallet, 'name': 'Paytm'},
+      {'icon': HugeIcons.strokeRoundedBank, 'name': 'Net Banking'},
     ];
 
     return GridView.builder(
@@ -178,22 +218,27 @@ class Wallet2Screen extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 1.1,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.15,
       ),
       itemCount: methods.length,
       itemBuilder: (context, index) {
         return GlassContainer(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(8),
+          borderRadius: 18,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(methods[index]['icon'] as IconData, size: 32, color: AppColors.primaryCyan),
+              HugeIcon(
+                icon: methods[index]['icon'] as List<List<dynamic>>,
+                color: AppColors.primary,
+                size: 24,
+              ),
               const SizedBox(height: 8),
               Text(
                 methods[index]['name'] as String,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white),
               ),
             ],
           ),
@@ -202,48 +247,47 @@ class Wallet2Screen extends StatelessWidget {
     );
   }
 
-  Widget _buildRewardsList(ThemeData theme) {
+  Widget _buildRewardsList() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          _buildRewardCard('Cashback', 'Earn up to ₹500 on next charge', Icons.monetization_on, AppColors.success),
-          _buildRewardCard('Referral', 'Invite friends, get ₹100', Icons.group_add, AppColors.primaryCyan),
-          _buildRewardCard('Coupons', '3 Active Coupons', Icons.local_offer, AppColors.warning),
+          _buildRewardCard('Cashback', 'Earn up to ₹500 on next charge', HugeIcons.strokeRoundedDiscount, AppColors.secondary),
+          _buildRewardCard('Referral', 'Invite friends, get ₹100 bonus', HugeIcons.strokeRoundedGroup, AppColors.primary),
+          _buildRewardCard('Coupons', '3 Active SuperSaver coupons', HugeIcons.strokeRoundedTicket02, AppColors.warning),
         ],
       ),
     );
   }
 
-  Widget _buildRewardCard(String title, String subtitle, IconData icon, Color color) {
+  Widget _buildRewardCard(String title, String subtitle, List<List<dynamic>> icon, Color color) {
     return Container(
-      width: 240,
-      margin: const EdgeInsets.only(right: 16),
+      width: 230,
+      margin: const EdgeInsets.only(right: 14),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.card.withOpacity(0.8),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: color.withOpacity(0.3), width: 1.5),
-        boxShadow: AppColors.neonShadow(color: color, blurRadius: 10),
+        color: AppColors.card.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: color.withOpacity(0.25), width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: color.withOpacity(0.2), shape: BoxShape.circle),
-            child: Icon(icon, color: color),
+            decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+            child: HugeIcon(icon: icon, color: color, size: 20),
           ),
           const SizedBox(height: 16),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
           const SizedBox(height: 4),
-          Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11, height: 1.3)),
         ],
       ),
     );
   }
 
-  Widget _buildTransactionList(ThemeData theme) {
+  Widget _buildTransactionList() {
     return Column(
       children: List.generate(4, (index) {
         final isCredit = index % 2 == 0;
@@ -251,17 +295,19 @@ class Wallet2Screen extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 12),
           child: GlassContainer(
             padding: const EdgeInsets.all(16),
+            borderRadius: 18,
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: (isCredit ? AppColors.success : AppColors.error).withOpacity(0.2),
+                    color: (isCredit ? AppColors.secondary : AppColors.danger).withOpacity(0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    isCredit ? Icons.add : Icons.ev_station,
-                    color: isCredit ? AppColors.success : AppColors.error,
+                  child: HugeIcon(
+                    icon: isCredit ? HugeIcons.strokeRoundedAddCircle : HugeIcons.strokeRoundedFuelStation,
+                    color: isCredit ? AppColors.secondary : AppColors.danger,
+                    size: 20,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -269,8 +315,12 @@ class Wallet2Screen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(isCredit ? 'Money Added (UPI)' : 'Charging Session', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const Text('Today, 2:30 PM', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      Text(
+                        isCredit ? 'Money Added (UPI Topup)' : 'Charging Session CP-04',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text('Today, 2:30 PM', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
                     ],
                   ),
                 ),
@@ -278,8 +328,8 @@ class Wallet2Screen extends StatelessWidget {
                   '${isCredit ? "+" : "-"}₹${isCredit ? 500 : 340}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: isCredit ? AppColors.success : Colors.white,
+                    fontSize: 14,
+                    color: isCredit ? AppColors.secondary : Colors.white,
                   ),
                 ),
               ],
@@ -290,3 +340,4 @@ class Wallet2Screen extends StatelessWidget {
     );
   }
 }
+

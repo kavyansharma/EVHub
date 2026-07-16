@@ -14,24 +14,27 @@ class VehicleService {
       connectorTypes: ['CCS2', 'Type 2'],
       maxAcChargingSpeed: 7.2,
       maxDcChargingSpeed: 50.0,
-      vehicleImage: 'https://example.com/nexon_ev.png', // Placeholder URL
-      registrationNumber: '',
-      nickname: '',
+      vehicleImage: 'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=800&q=80',
+      registrationNumber: 'DL-3C-AY-1244',
+      nickname: 'Blue Lightning',
+      isDefault: true,
+      currentBatteryPct: 68.0,
     ),
     const VehicleModel(
-      id: 'mg-zs-ev',
+      id: 'mg-windsor-ev',
       manufacturer: 'MG',
-      model: 'ZS EV',
+      model: 'Windsor EV',
       variant: 'Exclusive',
-      year: 2023,
-      batteryCapacity: 50.3,
-      realRange: 350,
+      year: 2024,
+      batteryCapacity: 38.0,
+      realRange: 285,
       connectorTypes: ['CCS2', 'Type 2'],
       maxAcChargingSpeed: 7.4,
-      maxDcChargingSpeed: 80.0,
-      vehicleImage: 'https://example.com/mg_zs.png',
-      registrationNumber: '',
-      nickname: '',
+      maxDcChargingSpeed: 50.0,
+      vehicleImage: 'https://images.unsplash.com/photo-1606016159991-dfe4f2746ad5?auto=format&fit=crop&w=800&q=80',
+      registrationNumber: 'MH-12-TX-8899',
+      nickname: 'Windy',
+      currentBatteryPct: 45.0,
     ),
     const VehicleModel(
       id: 'byd-atto-3',
@@ -44,9 +47,10 @@ class VehicleService {
       connectorTypes: ['CCS2', 'Type 2'],
       maxAcChargingSpeed: 7.0,
       maxDcChargingSpeed: 80.0,
-      vehicleImage: 'https://example.com/byd_atto3.png',
-      registrationNumber: '',
-      nickname: '',
+      vehicleImage: 'https://images.unsplash.com/photo-1681283620953-73c38db5dfc8?auto=format&fit=crop&w=800&q=80',
+      registrationNumber: 'KA-03-MY-7722',
+      nickname: 'Blade',
+      currentBatteryPct: 82.0,
     ),
     const VehicleModel(
       id: 'mahindra-xuv400',
@@ -59,9 +63,10 @@ class VehicleService {
       connectorTypes: ['CCS2', 'Type 2'],
       maxAcChargingSpeed: 7.2,
       maxDcChargingSpeed: 50.0,
-      vehicleImage: 'https://example.com/xuv400.png',
-      registrationNumber: '',
-      nickname: '',
+      vehicleImage: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80',
+      registrationNumber: 'MH-14-EV-0400',
+      nickname: 'Copper Beast',
+      currentBatteryPct: 90.0,
     ),
     const VehicleModel(
       id: 'hyundai-ioniq-5',
@@ -73,16 +78,33 @@ class VehicleService {
       realRange: 480,
       connectorTypes: ['CCS2', 'Type 2'],
       maxAcChargingSpeed: 11.0,
-      maxDcChargingSpeed: 350.0, // 800V architecture
-      vehicleImage: 'https://example.com/ioniq5.png',
-      registrationNumber: '',
-      nickname: '',
+      maxDcChargingSpeed: 350.0,
+      vehicleImage: 'https://images.unsplash.com/photo-1669062508887-21be148970e5?auto=format&fit=crop&w=800&q=80',
+      registrationNumber: 'DL-1C-EV-9999',
+      nickname: 'CyberShip',
+      currentBatteryPct: 55.0,
+    ),
+    const VehicleModel(
+      id: 'tesla-model-3',
+      manufacturer: 'Tesla',
+      model: 'Model 3',
+      variant: 'Standard Range',
+      year: 2024,
+      batteryCapacity: 57.5,
+      realRange: 380,
+      connectorTypes: ['CCS2', 'Type 2'],
+      maxAcChargingSpeed: 11.0,
+      maxDcChargingSpeed: 170.0,
+      vehicleImage: 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=800&q=80',
+      registrationNumber: 'KA-51-EV-2024',
+      nickname: 'Nikola',
+      currentBatteryPct: 75.0,
     ),
   ];
 
   Future<List<VehicleModel>> getAvailableVehicles() async {
     // Simulating network delay
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 300));
     return indianEVEcosystem;
   }
 
@@ -94,3 +116,4 @@ class VehicleService {
     }
   }
 }
+

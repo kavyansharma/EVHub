@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/widgets/premium_button.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../providers/charging_session_provider.dart';
-import 'dart:ui';
+import '../../providers/garage_provider.dart';
 import 'dart:math' as math;
 
 class LiveChargingScreen extends StatefulWidget {
@@ -15,242 +15,429 @@ class LiveChargingScreen extends StatefulWidget {
 }
 
 class _LiveChargingScreenState extends State<LiveChargingScreen> with TickerProviderStateMixin {
+  late AnimationController _flowController;
   late AnimationController _pulseController;
-  late AnimationController _rotateController;
+  bool _isPaused = false;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
+    _flowController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    
-    _rotateController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
     )..repeat();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
+    _flowController.dispose();
     _pulseController.dispose();
-    _rotateController.dispose();
     super.dispose();
+  }
+
+  String _getVehicleImage(String? model) {
+    if (model == null) return 'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=800&q=80';
+    final m = model.toLowerCase();
+    if (m.contains('nexon')) return 'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=800&q=80';
+    if (m.contains('windsor') || m.contains('zs')) return 'https://images.unsplash.com/photo-1606016159991-dfe4f2746ad5?auto=format&fit=crop&w=800&q=80';
+    if (m.contains('atto') || m.contains('seal')) return 'https://images.unsplash.com/photo-1681283620953-73c38db5dfc8?auto=format&fit=crop&w=800&q=80';
+    if (m.contains('xuv')) return 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80';
+    if (m.contains('ioniq')) return 'https://images.unsplash.com/photo-1669062508887-21be148970e5?auto=format&fit=crop&w=800&q=80';
+    return 'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=800&q=80';
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final brandColor = theme.colorScheme.primary;
-    final chargingProvider = context.watch<ChargingSessionProvider>();
-    final session = chargingProvider.activeSession;
+    final sessionProvider = context.watch<ChargingSessionProvider>();
+    final garageProvider = context.watch<GarageProvider>();
+    final session = sessionProvider.activeSession;
+    final primaryVehicle = garageProvider.selectedVehicle ?? 
+        (garageProvider.vehicles.isNotEmpty ? garageProvider.vehicles.first : null);
 
     if (session == null) {
-      return _buildNoActiveSession(context, brandColor);
+      return _buildNoActiveSession(context);
     }
 
+    final batteryPercentage = session.batteryPercentage;
+    final vehicleImg = _getVehicleImage(primaryVehicle?.model);
+
     return Scaffold(
+      backgroundColor: AppColors.background,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Live Charging', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-        centerTitle: true,
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          image: DecorationImage(
-            image: const NetworkImage('https://images.unsplash.com/photo-1617783921319-7977eb780131?auto=format&fit=crop&w=800&q=80'),
-            fit: BoxFit.cover,
-            colorFilter: ColorFilter.mode(AppColors.background.withOpacity(0.9), BlendMode.darken),
-          ),
+        title: const Text('CHARGING CONSOLE', style: TextStyle(letterSpacing: 2.0, fontSize: 16)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              
-              // 3D Glowing Battery Visualization
-              Expanded(
-                flex: 5,
-                child: Center(
-                  child: Stack(
+      ),
+      body: Stack(
+        children: [
+          // Background ambient glows
+          Positioned(
+            top: 100,
+            left: -100,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withOpacity(0.05),
+                boxShadow: [
+                  BoxShadow(color: AppColors.primary.withOpacity(0.08), blurRadius: 100, spreadRadius: 50)
+                ],
+              ),
+            ),
+          ),
+          
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1. Large Vehicle Render & Charging Port Particle Flow
+                  Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Glowing Aura
-                      AnimatedBuilder(
-                        animation: _pulseController,
-                        builder: (context, child) {
-                          return Container(
-                            width: 250 + (_pulseController.value * 30),
-                            height: 250 + (_pulseController.value * 30),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.success.withOpacity(0.15),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.success.withOpacity(0.3 + (_pulseController.value * 0.2)),
-                                  blurRadius: 60 + (_pulseController.value * 40),
-                                  spreadRadius: 20,
-                                )
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      
-                      // Rotating Rings
-                      AnimatedBuilder(
-                        animation: _rotateController,
-                        builder: (context, child) {
-                          return Transform.rotate(
-                            angle: _rotateController.value * 2 * math.pi,
-                            child: Container(
-                              width: 280,
-                              height: 280,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: AppColors.success.withOpacity(0.2),
-                                  width: 2,
-                                  style: BorderStyle.solid,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      
-                      // Progress Arc
-                      SizedBox(
-                        width: 240,
-                        height: 240,
-                        child: CircularProgressIndicator(
-                          value: session.batteryPercentage / 100,
-                          strokeWidth: 16,
-                          backgroundColor: Colors.white.withOpacity(0.05),
-                          color: AppColors.success,
-                          strokeCap: StrokeCap.round,
+                      // Glow underneath the car
+                      Positioned(
+                        bottom: 40,
+                        child: Container(
+                          width: 260,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            boxShadow: [
+                              BoxShadow(
+                                color: _isPaused ? AppColors.warning.withOpacity(0.15) : AppColors.secondary.withOpacity(0.3),
+                                blurRadius: 40,
+                                spreadRadius: 10,
+                              )
+                            ],
+                          ),
                         ),
                       ),
-                      
-                      // Percentage Text
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.bolt, color: AppColors.success, size: 40),
-                          Text(
-                            '${session.batteryPercentage.toInt()}%',
-                            style: const TextStyle(fontSize: 64, fontWeight: FontWeight.bold, color: Colors.white, height: 1.0),
+                      // Vehicle Image
+                      Container(
+                        height: 180,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        child: Hero(
+                          tag: 'vehicle_${primaryVehicle?.id ?? 'default'}',
+                          child: Image.network(
+                            vehicleImg,
+                            fit: BoxFit.contain,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${session.estimatedFinishTimeMinutes} mins remaining',
-                            style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ),
+                      // Animated Electricity Flow Overlay
+                      if (!_isPaused)
+                        Positioned(
+                          right: 30,
+                          bottom: 50,
+                          child: AnimatedBuilder(
+                            animation: _flowController,
+                            builder: (context, child) {
+                              return CustomPaint(
+                                size: const Size(120, 40),
+                                painter: ElectricityFlowPainter(
+                                  progress: _flowController.value,
+                                  flowColor: AppColors.secondary,
+                                ),
+                              );
+                            },
                           ),
-                        ],
+                        ),
+                    ],
+                  ),
+
+                  // 2. Battery Percentage Gauge
+                  GlassContainer(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      children: [
+                        // Radial progress ring
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              CircularProgressIndicator(
+                                value: batteryPercentage / 100.0,
+                                strokeWidth: 10,
+                                backgroundColor: Colors.white.withOpacity(0.04),
+                                color: _isPaused ? AppColors.warning : AppColors.secondary,
+                                strokeCap: StrokeCap.round,
+                              ),
+                              Center(
+                                child: Text(
+                                  '${batteryPercentage.toInt()}%',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                primaryVehicle?.model ?? 'Tata Nexon EV',
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    _isPaused ? Icons.pause_circle_outline : Icons.flash_on,
+                                    size: 14,
+                                    color: _isPaused ? AppColors.warning : AppColors.secondary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _isPaused ? 'Charging Paused' : 'Fast Charging...',
+                                    style: TextStyle(
+                                      color: _isPaused ? AppColors.warning : AppColors.secondary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${session.estimatedFinishTimeMinutes} mins remaining',
+                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Live Tech Metrics Panel
+                  Row(
+                    children: [
+                      Expanded(child: _buildParameterItem('POWER', '${_isPaused ? 0.0 : session.currentKw}', 'kW', AppColors.primary)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildParameterItem('ADDED', session.unitsConsumed.toStringAsFixed(1), 'kWh', AppColors.secondary)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildParameterItem('COST', '₹${session.currentCost.toStringAsFixed(0)}', 'INR', Colors.white)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: _buildParameterItem('CURRENT', _isPaused ? '0.0' : '150.2', 'A', AppColors.accent)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildParameterItem('VOLTAGE', _isPaused ? '0.0' : '398.5', 'V', AppColors.accent)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildParameterItem('TEMP', '34.5', '°C', AppColors.warning)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 4. Energy Input Live Graph
+                  GlassContainer(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'LIVE POWER OUTFLOW',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white70, letterSpacing: 1.0),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 120,
+                          child: LineChart(
+                            LineChartData(
+                              gridData: FlGridData(show: false),
+                              titlesData: FlTitlesData(show: false),
+                              borderData: FlBorderData(show: false),
+                              minX: 0,
+                              maxX: 7,
+                              minY: 0,
+                              maxY: 80,
+                              lineBarsData: [
+                                LineChartBarData(
+                                  spots: [
+                                    FlSpot(0, _isPaused ? 0 : 45),
+                                    FlSpot(1, _isPaused ? 0 : 50),
+                                    FlSpot(2, _isPaused ? 0 : 58),
+                                    FlSpot(3, _isPaused ? 0 : 57),
+                                    FlSpot(4, _isPaused ? 0 : 60),
+                                    FlSpot(5, _isPaused ? 0 : 59),
+                                    FlSpot(6, _isPaused ? 0 : 61),
+                                    FlSpot(7, _isPaused ? 0 : 60),
+                                  ],
+                                  isCurved: true,
+                                  color: AppColors.primary,
+                                  barWidth: 3,
+                                  isStrokeCapRound: true,
+                                  dotData: FlDotData(show: false),
+                                  belowBarData: BarAreaData(
+                                    show: true,
+                                    color: AppColors.primary.withOpacity(0.1),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 5. Technical Health Index
+                  GlassContainer(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Battery Health Index (SoH)', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text(
+                            '98.4% (Excellent)',
+                            style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // 6. Pause & Stop Buttons
+                  Row(
+                    children: [
+                      // Pause Button
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isPaused = !_isPaused;
+                            });
+                          },
+                          child: Container(
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: AppColors.card,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _isPaused ? AppColors.warning.withOpacity(0.5) : Colors.white.withOpacity(0.08),
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Center(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    _isPaused ? Icons.play_arrow : Icons.pause,
+                                    color: _isPaused ? AppColors.warning : Colors.white,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _isPaused ? 'Resume' : 'Pause Session',
+                                    style: TextStyle(
+                                      color: _isPaused ? AppColors.warning : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Stop Button
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            sessionProvider.stopSession();
+                          },
+                          child: Container(
+                            height: 56,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF4D67), Color(0xFFFF2E4C)],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: AppColors.neonShadow(color: AppColors.danger, blurRadius: 15),
+                            ),
+                            child: const Center(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.stop, color: Colors.white, size: 20),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Stop Charge',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 40),
+                ],
               ),
-              
-              // Live Data Panel
-              Expanded(
-                flex: 4,
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.card.withOpacity(0.6),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
-                    border: Border(top: BorderSide(color: AppColors.success.withOpacity(0.4), width: 1)),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              _buildDataWidget('Power', '${session.currentKw}', 'kW', Icons.speed, Colors.orange),
-                              Container(width: 1, height: 60, color: Colors.white12),
-                              _buildDataWidget('Added', '${session.unitsConsumed.toStringAsFixed(1)}', 'kWh', Icons.battery_charging_full, AppColors.success),
-                              Container(width: 1, height: 60, color: Colors.white12),
-                              _buildDataWidget('Cost', '${session.currentCost.toStringAsFixed(0)}', 'INR', Icons.account_balance_wallet, Colors.blue),
-                            ],
-                          ),
-                          
-                          const SizedBox(height: 16),
-                          
-                          Container(
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(30),
-                              gradient: LinearGradient(
-                                colors: [Colors.redAccent.withOpacity(0.8), Colors.red.withOpacity(0.8)],
-                              ),
-                              boxShadow: [
-                                BoxShadow(color: Colors.red.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 8)),
-                              ],
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(30),
-                                onTap: () => chargingProvider.stopSession(),
-                                child: const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 20),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.stop_circle_outlined, color: Colors.white, size: 28),
-                                      SizedBox(width: 12),
-                                      Text('STOP CHARGING', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
-  
-  Widget _buildNoActiveSession(BuildContext context, Color brandColor) {
+
+  Widget _buildNoActiveSession(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Charging Dashboard'),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-      ),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('CHARGER STATUS')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.ev_station_outlined, size: 120, color: Colors.white12),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppColors.card.withOpacity(0.5),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.04)),
+              ),
+              child: const Icon(Icons.flash_off, size: 72, color: Colors.white24),
+            ),
             const SizedBox(height: 24),
-            const Text('No Active Session', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            const Text(
+              'No Active Charging Session',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
             const SizedBox(height: 8),
-            const Text('Connect your EV to begin charging.', style: TextStyle(color: Colors.grey, fontSize: 16)),
-            const SizedBox(height: 40),
-            PremiumButton(
-              text: 'Scan QR to Charge',
-              icon: Icons.qr_code_scanner,
-              onPressed: () {},
+            const Text(
+              'Go to the Maps view to select a station\nand initiate a CCS2 DC Fast Charge.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
             ),
           ],
         ),
@@ -258,23 +445,74 @@ class _LiveChargingScreenState extends State<LiveChargingScreen> with TickerProv
     );
   }
 
-  Widget _buildDataWidget(String title, String value, String unit, IconData icon, Color color) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
-            const SizedBox(width: 4),
-            Text(unit, style: const TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(title, style: const TextStyle(color: Colors.grey, fontSize: 12, letterSpacing: 1)),
-      ],
+  Widget _buildParameterItem(String title, String value, String unit, Color glowColor) {
+    return GlassContainer(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      borderRadius: 20,
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -0.5),
+              ),
+              const SizedBox(width: 2),
+              Text(
+                unit,
+                style: TextStyle(fontSize: 10, color: glowColor, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
     );
   }
 }
+
+class ElectricityFlowPainter extends CustomPainter {
+  final double progress;
+  final Color flowColor;
+
+  ElectricityFlowPainter({required this.progress, required this.flowColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = flowColor.withOpacity(0.8)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    path.moveTo(0, size.height / 2);
+    
+    // Wave calculations
+    for (double i = 0; i <= size.width; i++) {
+      final y = size.height / 2 + math.sin((i / size.width * 2 * math.pi) + (progress * 2 * math.pi)) * 6;
+      path.lineTo(i, y);
+    }
+    canvas.drawPath(path, paint);
+
+    // Glowing particles along the wave
+    final dotPaint = Paint()..color = flowColor;
+    final dotX = progress * size.width;
+    final dotY = size.height / 2 + math.sin((dotX / size.width * 2 * math.pi) + (progress * 2 * math.pi)) * 6;
+    
+    canvas.drawCircle(Offset(dotX, dotY), 4, dotPaint);
+    canvas.drawCircle(Offset(dotX, dotY), 8, Paint()..color = flowColor.withOpacity(0.3));
+  }
+
+  @override
+  bool shouldRepaint(covariant ElectricityFlowPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.flowColor != flowColor;
+  }
+}
+

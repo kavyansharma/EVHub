@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/assistant_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -46,11 +47,14 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
     }
   }
 
-  Future<void> _sendMessage() async {
-    final text = _messageController.text.trim();
+  Future<void> _sendMessage({String? predefinedText}) async {
+    final text = predefinedText ?? _messageController.text.trim();
     if (text.isEmpty) return;
 
-    _messageController.clear();
+    if (predefinedText == null) {
+      _messageController.clear();
+    }
+    
     final authProvider = context.read<AuthProvider>();
     final provider = context.read<AssistantProvider>();
     await provider.sendMessage(authProvider.user?.id ?? 'default_user', text);
@@ -65,15 +69,14 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
     final messages = provider.messages.reversed.toList();
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        flexibleSpace: ClipRRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(color: AppColors.background.withOpacity(0.5)),
-          ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -81,24 +84,24 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: brandColor.withOpacity(0.2),
+                color: brandColor.withOpacity(0.12),
                 shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: brandColor.withOpacity(0.5), blurRadius: 10)],
+                border: Border.all(color: brandColor.withOpacity(0.3)),
               ),
-              child: Icon(Icons.auto_awesome, color: brandColor, size: 16),
+              child: HugeIcon(icon: HugeIcons.strokeRoundedBot, color: brandColor, size: 16),
             ),
             const SizedBox(width: 8),
-            const Text('EVHub Intelligence', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('EVHub Intelligence', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
           ],
         ),
         centerTitle: true,
         actions: [
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
         ],
       ),
       body: Stack(
         children: [
-          // Dynamic Background
+          // Dynamic Background ambient glows
           AnimatedBuilder(
             animation: _bgAnimationController,
             builder: (context, child) {
@@ -113,8 +116,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
                       height: 300,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: brandColor.withOpacity(0.15),
-                        boxShadow: [BoxShadow(color: brandColor.withOpacity(0.2), blurRadius: 100, spreadRadius: 50)],
+                        color: brandColor.withOpacity(0.08),
+                        boxShadow: [BoxShadow(color: brandColor.withOpacity(0.1), blurRadius: 100, spreadRadius: 50)],
                       ),
                     ),
                   ),
@@ -126,8 +129,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
                       height: 400,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: AppColors.primaryPurple.withOpacity(0.1),
-                        boxShadow: [BoxShadow(color: AppColors.primaryPurple.withOpacity(0.15), blurRadius: 100, spreadRadius: 50)],
+                        color: AppColors.accent.withOpacity(0.05),
+                        boxShadow: [BoxShadow(color: AppColors.accent.withOpacity(0.08), blurRadius: 100, spreadRadius: 50)],
                       ),
                     ),
                   ),
@@ -142,14 +145,19 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
                 Expanded(
                   child: ListView.builder(
                     controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
                       return _buildMessageBubble(messages[index], brandColor);
                     },
                   ),
                 ),
+                
                 if (provider.isTyping) _buildTypingIndicator(brandColor),
+
+                // Quick Prompts list when chat is empty
+                if (messages.isEmpty) _buildQuickPromptChips(),
+                
                 _buildInputArea(brandColor),
               ],
             ),
@@ -180,7 +188,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
                   child: CircularProgressIndicator(strokeWidth: 2, color: brandColor),
                 ),
                 const SizedBox(width: 12),
-                const Text('Analyzing...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                const Text('Formulating response...', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
               ],
             ),
           ),
@@ -203,41 +211,75 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
               padding: const EdgeInsets.all(8),
               margin: const EdgeInsets.only(right: 12),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [brandColor.withOpacity(0.5), brandColor.withOpacity(0.1)]),
+                color: brandColor.withOpacity(0.12),
                 shape: BoxShape.circle,
-                border: Border.all(color: brandColor.withOpacity(0.5)),
+                border: Border.all(color: brandColor.withOpacity(0.3)),
               ),
-              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+              child: HugeIcon(icon: HugeIcons.strokeRoundedBot, color: brandColor, size: 16),
             ),
           ],
           Flexible(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: isUser ? brandColor : AppColors.card.withOpacity(0.6),
+                gradient: isUser 
+                    ? LinearGradient(colors: [AppColors.accent, brandColor])
+                    : null,
+                color: isUser ? null : AppColors.card.withOpacity(0.5),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(24),
                   topRight: const Radius.circular(24),
                   bottomLeft: isUser ? const Radius.circular(24) : const Radius.circular(4),
                   bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(24),
                 ),
-                border: isUser ? null : Border.all(color: Colors.white10),
-                boxShadow: [
-                  BoxShadow(
-                    color: isUser ? brandColor.withOpacity(0.3) : Colors.black26,
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                border: Border.all(
+                  color: isUser ? brandColor.withOpacity(0.5) : Colors.white.withOpacity(0.08),
+                  width: 1,
+                ),
+                boxShadow: isUser ? AppColors.neonShadow(color: brandColor, blurRadius: 10) : null,
               ),
               child: Text(
                 message.message,
-                style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+                style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.45),
               ),
             ),
           ),
           if (isUser) const SizedBox(width: 32),
         ],
+      ),
+    );
+  }
+
+  Widget _buildQuickPromptChips() {
+    final prompts = [
+      'Find 120kW Fast Chargers',
+      'Calculate SOH Diagnostics',
+      'Optimize NEXON real-range',
+      'Compare AC/DC plug rates',
+    ];
+
+    return Container(
+      height: 45,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: prompts.length,
+        itemBuilder: (context, index) {
+          return Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: ActionChip(
+              backgroundColor: AppColors.card.withOpacity(0.5),
+              side: BorderSide(color: Colors.white.withOpacity(0.08)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              label: Text(
+                prompts[index],
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              onPressed: () => _sendMessage(predefinedText: prompts[index]),
+            ),
+          );
+        },
       ),
     );
   }
@@ -265,8 +307,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
                     controller: _messageController,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      hintText: 'Ask me anything...',
-                      hintStyle: TextStyle(color: Colors.grey),
+                      hintText: 'Ask AI assistant...',
+                      hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                     ),
@@ -276,17 +318,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
               ),
               const SizedBox(width: 12),
               GestureDetector(
-                onTap: _sendMessage,
+                onTap: () => _sendMessage(),
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: brandColor,
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: brandColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))
-                    ],
+                    boxShadow: AppColors.neonShadow(color: brandColor, blurRadius: 10),
                   ),
-                  child: const Icon(Icons.arrow_upward, color: Colors.white, size: 20),
+                  child: const HugeIcon(icon: HugeIcons.strokeRoundedArrowUp01, color: Colors.black, size: 20),
                 ),
               ),
             ],
@@ -296,3 +336,4 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> with SingleTicker
     );
   }
 }
+

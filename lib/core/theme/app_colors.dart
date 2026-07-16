@@ -1,56 +1,76 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Phase 6 Premium Palette (Tesla/Statiq inspired)
-  static const Color primaryCyan = Color(0xFF00D9FF);   // Electric Blue
-  static const Color primaryGreen = Color(0xFF00FF9D);  // Neon Green
-  static const Color accentPurple = Color(0xFF9E00FF);  // For Wallet Gradients
-  
-  // Background & Surfaces
-  static const Color background = Color(0xFF07090D);
-  static const Color card = Color(0xFF111827);
+  // Premium Redesign V2 Color Palette
+  static const Color background = Color(0xFF080A12);
+  static const Color primary = Color(0xFF00E5FF);      // Cyan
+  static const Color secondary = Color(0xFF00FF9C);    // Mint Green
+  static const Color accent = Color(0xFF5B8CFF);       // Electric Blue
+  static const Color warning = Color(0xFFFFC247);      // Amber
+  static const Color danger = Color(0xFFFF4D67);       // Red
+  static const Color error = Color(0xFFFF4D67);        // Red Alias
 
-  // Status Colors
-  static const Color success = Color(0xFF1ED760);
-  static const Color warning = Color(0xFFFFC857);
-  static const Color error = Color(0xFFFF5C5C);
-  static const Color dangerRed = Color(0xFFFF5C5C); // Alias for legacy support
-
-  // Text
+  // Surfaces
+  static const Color card = Color(0xFF111524);         // Deep space card
   static const Color textPrimary = Colors.white;
-  static const Color textSecondary = Color(0xFF9CA3AF); // Cool Grey
+  static const Color textSecondary = Color(0xFF8F9CAE); // Slate Grey
+
+  // Gradients
+  static const Gradient walletGradient = LinearGradient(
+    colors: [Color(0xFF9E00FF), Color(0xFF5B8CFF)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const Gradient chargingGradient = LinearGradient(
+    colors: [Color(0xFF5B8CFF), Color(0xFF00E5FF)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const Gradient primaryGradient = LinearGradient(
+    colors: [Color(0xFF00E5FF), Color(0xFF00FF9C)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
   // ----------------------------------------------------
   // LEGACY COLORS (To avoid breaking existing screens before refactor)
   // ----------------------------------------------------
-  static const Color primaryBlue = Color(0xFF00D9FF);
+  static const Color primaryCyan = Color(0xFF00E5FF);
+  static const Color primaryGreen = Color(0xFF00FF9C);
+  static const Color accentPurple = Color(0xFF9E00FF);
+  static const Color success = Color(0xFF00FF9C);
+  static const Color dangerRed = Color(0xFFFF4D67);
+
+  static const Color primaryBlue = Color(0xFF00E5FF);
   static const Color primaryPurple = Color(0xFF9E00FF);
-  static const Color accentCyan = Color(0xFF00D9FF);
-  static const Color accentGreen = Color(0xFF1ED760);
+  static const Color accentCyan = Color(0xFF00E5FF);
+  static const Color accentGreen = Color(0xFF00FF9C);
   static const Color accentAmber = Color(0xFFFFC857);
 
-  static const Color darkBackground = Color(0xFF07090D);
-  static const Color darkSurface = Color(0xFF111827);
-  static const Color darkSurfaceCard = Color(0xFF1E2638);
+  static const Color darkBackground = Color(0xFF080A12);
+  static const Color darkSurface = Color(0xFF111524);
+  static const Color darkSurfaceCard = Color(0xFF1F263E);
   static const Color darkTextPrimary = Colors.white;
-  static const Color darkTextSecondary = Color(0xFF9CA3AF);
+  static const Color darkTextSecondary = Color(0xFF8F9CAE);
 
-  static const Color lightBackground = Color(0xFFF5F7FA);
-  static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightSurfaceCard = Color(0xFFECEFF1);
-  static const Color lightTextPrimary = Color(0xFF111827);
-  static const Color lightTextSecondary = Color(0xFF6B7280);
+  static const Color lightBackground = Color(0xFF080A12); // Forced Dark
+  static const Color lightSurface = Color(0xFF111524);
+  static const Color lightSurfaceCard = Color(0xFF1F263E);
+  static const Color lightTextPrimary = Colors.white;
+  static const Color lightTextSecondary = Color(0xFF8F9CAE);
 
-  // Brand Dynamic Themes
-  static const Color brandTata = Color(0xFF00D9FF);      // Electric Blue
-  static const Color brandMG = Color(0xFFFF5C5C);        // Red
-  static const Color brandMahindra = Color(0xFFD84315);  // Copper
-  static const Color brandBYD = Color(0xFFB0BEC5);       // Silver
-  static const Color brandHyundai = Color(0xFF1E88E5);   // Blue
-  static const Color brandKia = Color(0xFF00FF9D);       // Neon Green
-  static const Color brandBMW = Color(0xFFFAFAFA);       // White
-  static const Color brandMercedes = Color(0xFF212121);  // Black
-  static const Color brandTesla = Color(0xFFE82127);     // Tesla Red
+  // Brand Dynamic Themes (Custom colored glows)
+  static const Color brandTata = Color(0xFF00E5FF);
+  static const Color brandMG = Color(0xFFFF4D67);
+  static const Color brandMahindra = Color(0xFFFFC247);
+  static const Color brandBYD = Color(0xFF5B8CFF);
+  static const Color brandHyundai = Color(0xFF00FF9C);
+  static const Color brandKia = Color(0xFF00FF9C);
+  static const Color brandBMW = Color(0xFFFAFAFA);
+  static const Color brandMercedes = Color(0xFF212121);
+  static const Color brandTesla = Color(0xFFFF4D67);
 
   // Glassmorphic Helpers
   static Color glassBorder([Brightness? brightness]) {
@@ -58,16 +78,16 @@ class AppColors {
   }
 
   static Color glassFill([Brightness? brightness]) {
-    return card.withOpacity(0.65);
+    return card.withOpacity(0.4);
   }
 
-  static List<BoxShadow> neonShadow({required Color color, double blurRadius = 12}) {
+  static List<BoxShadow> neonShadow({required Color color, double blurRadius = 16}) {
     return [
       BoxShadow(
-        color: color.withOpacity(0.4),
+        color: color.withOpacity(0.25),
         blurRadius: blurRadius,
         spreadRadius: 1,
-        offset: const Offset(0, 2),
+        offset: const Offset(0, 4),
       ),
     ];
   }
@@ -75,11 +95,12 @@ class AppColors {
   static List<BoxShadow> softShadow() {
     return [
       BoxShadow(
-        color: Colors.black.withOpacity(0.2),
-        blurRadius: 10,
+        color: Colors.black.withOpacity(0.4),
+        blurRadius: 16,
         spreadRadius: 0,
-        offset: const Offset(0, 4),
+        offset: const Offset(0, 8),
       ),
     ];
   }
 }
+
