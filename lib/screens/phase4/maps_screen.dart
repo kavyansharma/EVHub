@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
@@ -84,18 +85,26 @@ class _MapsScreenState extends State<MapsScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint("[MAPS SCREEN] initState called");
     _initMarkerIcons();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<MapsProvider>();
       provider.fetchCurrentLocationAndStations().then((_) {
         _recenterCamera();
+        // Show GPS error dialog AFTER map has loaded (non-blocking)
+        final err = provider.locationError;
+        if (err != null && mounted) {
+          _showLocationErrorDialog(err);
+          provider.clearLocationError();
+        }
       });
     });
 
     // Track real device location updates live
     _positionSubscription = _mapsService.getPositionStream().listen((pos) {
       if (mounted) {
+        debugPrint("[MAPS SCREEN] Live GPS update received: ${pos.latitude}, ${pos.longitude}");
         context.read<MapsProvider>().updateLiveLocation(pos.latitude, pos.longitude);
       }
     });
@@ -108,19 +117,57 @@ class _MapsScreenState extends State<MapsScreen> {
   }
 
   Future<void> _initMarkerIcons() async {
-    _markerAvailable = await createCustomMarker(const Color(0xFF10B981), false); // Green
-    _markerBusy = await createCustomMarker(const Color(0xFFF59E0B), false);      // Orange
-    _markerOffline = await createCustomMarker(const Color(0xFFEF4444), false);   // Red
-    _markerSelected = await createCustomMarker(const Color(0xFF3B82F6), true);    // Blue
-    if (mounted) {
-      setState(() {
-        _markersLoaded = true;
-      });
+    debugPrint("[MAPS SCREEN] Initializing custom marker icons...");
+    try {
+      _markerAvailable = await createCustomMarker(const Color(0xFF10B981), false); // Green
+      _markerBusy = await createCustomMarker(const Color(0xFFF59E0B), false);      // Orange
+      _markerOffline = await createCustomMarker(const Color(0xFFEF4444), false);   // Red
+      _markerSelected = await createCustomMarker(const Color(0xFF3B82F6), true);    // Blue
+      if (mounted) {
+        setState(() {
+          _markersLoaded = true;
+        });
+      }
+      debugPrint("[MAPS SCREEN] Custom marker icons loaded successfully.");
+    } catch (e) {
+      debugPrint("[MAPS SCREEN] Exception caught loading custom markers (falling back to defaults): $e");
     }
   }
 
+  void _showLocationErrorDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1D2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.location_off, color: Color(0xFFF59E0B), size: 22),
+            const SizedBox(width: 10),
+            const Text(
+              'Location Issue',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK', style: TextStyle(color: Color(0xFF10B981))),
+          ),
+        ],
+      ),
+    );
+  }
   @override
   void dispose() {
+    debugPrint("[MAPS SCREEN] dispose called");
+    context.read<MapsProvider>().stopAutoRefresh();
     _positionSubscription?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -130,25 +177,31 @@ class _MapsScreenState extends State<MapsScreen> {
   void _recenterCamera() {
     final mapsProvider = context.read<MapsProvider>();
     if (_mapController != null && mapsProvider.currentLocation != null) {
+      final targetLatLng = LatLng(
+        mapsProvider.currentLocation!['latitude']!,
+        mapsProvider.currentLocation!['longitude']!,
+      );
+      debugPrint("[MAPS SCREEN] Recentering camera to user GPS: $targetLatLng");
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
-            target: LatLng(
-              mapsProvider.currentLocation!['latitude']!,
-              mapsProvider.currentLocation!['longitude']!,
-            ),
+            target: targetLatLng,
             zoom: 14.5,
           ),
         ),
       );
+    } else {
+      debugPrint("[MAPS SCREEN] Unable to recenter camera: controller is $_mapController, currentLocation is ${mapsProvider.currentLocation}");
     }
   }
 
   void _zoomIn() {
+    debugPrint("[MAPS SCREEN] Zoom In triggered");
     _mapController?.animateCamera(CameraUpdate.zoomIn());
   }
 
   void _zoomOut() {
+    debugPrint("[MAPS SCREEN] Zoom Out triggered");
     _mapController?.animateCamera(CameraUpdate.zoomOut());
   }
 
@@ -175,6 +228,7 @@ class _MapsScreenState extends State<MapsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint("[MAPS SCREEN] Widget build lifecycle started");
     final mapsProvider = context.watch<MapsProvider>();
 
     // Build custom markers dynamically
@@ -204,10 +258,13 @@ class _MapsScreenState extends State<MapsScreen> {
         position: LatLng(m.latitude, m.longitude),
         icon: icon,
         onTap: () {
+          debugPrint("[MAPS SCREEN] Marker tapped: ${m.title}");
           mapsProvider.setSelectedMarker(m);
         },
       );
     }).toSet();
+
+    debugPrint("[MAPS SCREEN] Markers loaded count: ${mapMarkers.length}");
 
     // Directions routing polyline overlay
     final Set<Polyline> polylines = {};
@@ -233,37 +290,107 @@ class _MapsScreenState extends State<MapsScreen> {
       zoom: 14.0,
     );
 
+    debugPrint("[MAPS SCREEN] initialCameraPosition initialized: ${initialCameraPosition.target}");
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // Full Screen Google Map
+          // Full Screen Google Map rendered FIRST inside Stack
           Positioned.fill(
-            child: GoogleMap(
-              initialCameraPosition: initialCameraPosition,
-              onMapCreated: (controller) {
-                _mapController = controller;
-                if (_mapType == MapType.normal) {
-                  controller.setMapStyle(MapConstants.darkMapStyle);
-                }
-              },
-              markers: mapMarkers,
-              polylines: polylines,
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              compassEnabled: true,
-              trafficEnabled: _trafficEnabled,
-              mapType: _mapType,
-              buildingsEnabled: true,
-              onTap: (_) {
-                // Clicking on empty map area resets selected card
-                mapsProvider.setSelectedMarker(null);
-                mapsProvider.clearRoute();
-                _searchFocusNode.unfocus();
-              },
+            child: Builder(
+              builder: (context) {
+                debugPrint("[MAPS SCREEN] GoogleMap widget rendering in build tree");
+                return GoogleMap(
+                  initialCameraPosition: initialCameraPosition,
+                  onMapCreated: (controller) {
+                    debugPrint("[MAPS SCREEN] GoogleMap successfully created and controller initialized");
+                    _mapController = controller;
+                    if (_mapType == MapType.normal) {
+                      if (kIsWeb) {
+                        debugPrint("[MAPS SCREEN] Skipping setMapStyle on Web to prevent PlatformException");
+                      } else {
+                        try {
+                          debugPrint("[MAPS SCREEN] Applying dark map style configuration on mobile");
+                          controller.setMapStyle(MapConstants.darkMapStyle);
+                        } catch (e) {
+                          debugPrint("[MAPS SCREEN] Exception caught applying map style: $e");
+                        }
+                      }
+                    }
+                  },
+                  markers: mapMarkers,
+                  polylines: polylines,
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  compassEnabled: true,
+                  trafficEnabled: _trafficEnabled,
+                  mapType: _mapType,
+                  buildingsEnabled: true,
+                  onTap: (_) {
+                    debugPrint("[MAPS SCREEN] Map tapped on empty area; clearing selection");
+                    mapsProvider.setSelectedMarker(null);
+                    mapsProvider.clearRoute();
+                    _searchFocusNode.unfocus();
+                  },
+                );
+              }
             ),
           ),
+
+          // Loading indicator overlay (non-blocking — map still renders)
+          if (mapsProvider.isLoading)
+            Positioned(
+              top: 0, left: 0, right: 0,
+              child: LinearProgressIndicator(
+                backgroundColor: Colors.transparent,
+                color: AppColors.primary,
+                minHeight: 3,
+              ),
+            ),
+
+          // "No chargers nearby" empty state — shown only when fully loaded and empty
+          if (!mapsProvider.isLoading && mapsProvider.markers.isEmpty)
+            Positioned(
+              bottom: 100,
+              left: 24,
+              right: 24,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1D2E).withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.08)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.ev_station, color: Color(0xFF10B981), size: 28),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'No EV Chargers Found Nearby',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Try searching for a different area or expand the search radius.',
+                            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // Header Glass Overlay: Autocomplete Search Console & Chips
           Positioned(
@@ -420,9 +547,25 @@ class _MapsScreenState extends State<MapsScreen> {
                     });
                     if (_mapController != null) {
                       if (_mapType == MapType.normal) {
-                        _mapController!.setMapStyle(MapConstants.darkMapStyle);
+                        if (kIsWeb) {
+                          debugPrint("[MAPS SCREEN] Skipping setMapStyle on Web satellite switch");
+                        } else {
+                          try {
+                            _mapController!.setMapStyle(MapConstants.darkMapStyle);
+                          } catch (e) {
+                            debugPrint("[MAPS SCREEN] Error setting map style: $e");
+                          }
+                        }
                       } else {
-                        _mapController!.setMapStyle(null);
+                        if (kIsWeb) {
+                          debugPrint("[MAPS SCREEN] Skipping clearMapStyle on Web satellite switch");
+                        } else {
+                          try {
+                            _mapController!.setMapStyle(null);
+                          } catch (e) {
+                            debugPrint("[MAPS SCREEN] Error clearing map style: $e");
+                          }
+                        }
                       }
                     }
                   },
