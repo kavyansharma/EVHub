@@ -1,15 +1,25 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/map_marker_model.dart';
+import '../repositories/firestore_charger_repository.dart';
 import '../repositories/maps_repository.dart';
 import '../services/maps_service.dart';
 import '../services/places_service.dart';
 
 class MapsProvider extends ChangeNotifier {
+  // Firestore is now the PRIMARY source of EV charger data.
+  // MapsRepository (Google Places) is retained for potential fallback use.
+  final FirestoreChargerRepository _firestoreChargerRepository;
+  // ignore: unused_field — retained as Google Places fallback for future use
   final MapsRepository _mapsRepository;
   final MapsService _mapsService;
   final PlacesService _placesService = PlacesService();
+
+  /// Maximum distance (in km) from the user's GPS position within which
+  /// Firestore chargers are shown on the map.
+  static const double _chargerRadiusKm = 20.0;
 
   List<MapMarkerModel> _markers = [];
   Map<String, double>? _currentLocation;
@@ -45,7 +55,10 @@ class MapsProvider extends ChangeNotifier {
   MapsProvider({
     required MapsRepository mapsRepository,
     required MapsService mapsService,
-  })  : _mapsRepository = mapsRepository,
+    FirestoreChargerRepository? firestoreChargerRepository,
+  })  : _firestoreChargerRepository =
+            firestoreChargerRepository ?? FirestoreChargerRepository(),
+        _mapsRepository = mapsRepository,
         _mapsService = mapsService;
 
   // Getters
@@ -153,20 +166,80 @@ class MapsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── Refresh chargers listing ─────────────────────────────────────────────
+  // ─── Refresh chargers listing (Firestore is primary source) ─────────────
   Future<void> refreshStations() async {
     if (_currentLocation == null) return;
     try {
-      debugPrint('[MapsProvider] Refreshing EV stations...');
-      _markers = await _mapsRepository.getStationsNearLocation(
-        _currentLocation!['latitude']!,
-        _currentLocation!['longitude']!,
-        10.0, // 10km radius as per spec
+      debugPrint('[MapsProvider] Fetching all EV chargers from Firestore...');
+
+      final userLat = _currentLocation!['latitude']!;
+      final userLng = _currentLocation!['longitude']!;
+
+      // 1. Fetch ALL chargers from Firestore.
+      final allChargers = await _firestoreChargerRepository.getAllChargers();
+
+      // ── DEBUG: total returned ────────────────────────────────────────────
+      debugPrint(
+        '[MapsProvider] Firestore returned ${allChargers.length} total chargers',
       );
-      debugPrint('[MapsProvider] ${_markers.length} stations loaded');
+
+      // ── DEBUG: print every charger name + coordinates ────────────────────
+      for (int i = 0; i < allChargers.length; i++) {
+        final c = allChargers[i];
+        debugPrint(
+          '[MapsProvider]   [${i + 1}/${allChargers.length}] '
+          'name="${c.title}" '
+          'lat=${c.latitude.toStringAsFixed(6)} '
+          'lng=${c.longitude.toStringAsFixed(6)}',
+        );
+      }
+
+      if (allChargers.isEmpty) {
+        debugPrint('[MapsProvider] Firestore contains zero chargers — showing empty state');
+        _markers = [];
+        notifyListeners();
+        return;
+      }
+
+      // 2. Filter chargers within _chargerRadiusKm of the user's GPS position.
+      final List<_ChargerWithDistance> withDistance = [];
+      for (final charger in allChargers) {
+        final distanceMeters = Geolocator.distanceBetween(
+          userLat,
+          userLng,
+          charger.latitude,
+          charger.longitude,
+        );
+        final distanceKm = distanceMeters / 1000.0;
+
+        // ── DEBUG: per-charger distance verdict ────────────────────────────
+        final verdict = distanceKm <= _chargerRadiusKm ? 'KEPT' : 'DISCARDED';
+        debugPrint(
+          '[MapsProvider]   "${charger.title}" → '
+          '${distanceKm.toStringAsFixed(2)} km — $verdict '
+          '(limit: ${_chargerRadiusKm.toInt()} km)',
+        );
+
+        if (distanceKm <= _chargerRadiusKm) {
+          withDistance.add(_ChargerWithDistance(charger, distanceKm));
+        }
+      }
+
+      // 3. Sort nearest-first.
+      withDistance.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+
+      _markers = withDistance.map((e) => e.charger).toList();
+
+      // ── DEBUG: final displayed count ─────────────────────────────────────
+      debugPrint(
+        '[MapsProvider] ✓ Displaying ${_markers.length} markers on map '
+        '(${allChargers.length - _markers.length} discarded beyond '
+        '${_chargerRadiusKm.toInt()} km).',
+      );
+
       notifyListeners();
     } catch (e) {
-      debugPrint('[MapsProvider] Error refreshing stations: $e');
+      debugPrint('[MapsProvider] Error refreshing Firestore stations: $e');
     }
   }
 
@@ -346,4 +419,14 @@ class MapsProvider extends ChangeNotifier {
       return true;
     }).toList();
   }
+}
+
+// ─── Private helper ───────────────────────────────────────────────────────────
+/// Pairs a [MapMarkerModel] with its computed distance from the user's GPS,
+/// used solely inside [MapsProvider.refreshStations] for filtering and sorting.
+class _ChargerWithDistance {
+  final MapMarkerModel charger;
+  final double distanceKm;
+
+  const _ChargerWithDistance(this.charger, this.distanceKm);
 }
