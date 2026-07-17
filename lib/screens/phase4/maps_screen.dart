@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../providers/maps_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -14,6 +16,46 @@ import '../../models/map_marker_model.dart';
 import '../../services/maps_service.dart';
 import '../charging/live_charging_screen.dart';
 import 'charger_details_screen.dart';
+
+// Helper function to dynamically generate circular glow markers
+Future<BitmapDescriptor> createCustomMarker(Color color, bool isSelected) async {
+  final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+  final Canvas canvas = Canvas(pictureRecorder);
+  final double radius = isSelected ? 30.0 : 22.0;
+  
+  // Paint shadow/glow
+  final Paint shadowPaint = Paint()
+    ..color = color.withOpacity(isSelected ? 0.6 : 0.3)
+    ..maskFilter = const MaskFilter.blur(ui.BlurStyle.normal, 6);
+  canvas.drawCircle(Offset(radius + 10, radius + 10), radius, shadowPaint);
+
+  // Paint border
+  final Paint borderPaint = Paint()
+    ..color = Colors.white
+    ..style = PaintingStyle.fill;
+  canvas.drawCircle(Offset(radius + 10, radius + 10), radius, borderPaint);
+
+  // Paint inner circle
+  final Paint fillPaint = Paint()
+    ..color = color
+    ..style = PaintingStyle.fill;
+  canvas.drawCircle(Offset(radius + 10, radius + 10), radius - (isSelected ? 5 : 3), fillPaint);
+
+  // If selected, draw center core
+  if (isSelected) {
+    final Paint centerPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(radius + 10, radius + 10), radius - 15, centerPaint);
+  }
+
+  final ui.Image image = await pictureRecorder.endRecording().toImage(
+    (radius * 2 + 20).toInt(),
+    (radius * 2 + 20).toInt(),
+  );
+  final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+  return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
+}
 
 class MapsScreen extends StatefulWidget {
   const MapsScreen({super.key});
@@ -32,9 +74,18 @@ class _MapsScreenState extends State<MapsScreen> {
   final MapsService _mapsService = MapsService();
   bool _isSuggestionsVisible = false;
 
+  // Caching marker icons
+  BitmapDescriptor? _markerAvailable;
+  BitmapDescriptor? _markerBusy;
+  BitmapDescriptor? _markerOffline;
+  BitmapDescriptor? _markerSelected;
+  bool _markersLoaded = false;
+
   @override
   void initState() {
     super.initState();
+    _initMarkerIcons();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<MapsProvider>();
       provider.fetchCurrentLocationAndStations().then((_) {
@@ -54,6 +105,18 @@ class _MapsScreenState extends State<MapsScreen> {
         _isSuggestionsVisible = _searchFocusNode.hasFocus;
       });
     });
+  }
+
+  Future<void> _initMarkerIcons() async {
+    _markerAvailable = await createCustomMarker(const Color(0xFF10B981), false); // Green
+    _markerBusy = await createCustomMarker(const Color(0xFFF59E0B), false);      // Orange
+    _markerOffline = await createCustomMarker(const Color(0xFFEF4444), false);   // Red
+    _markerSelected = await createCustomMarker(const Color(0xFF3B82F6), true);    // Blue
+    if (mounted) {
+      setState(() {
+        _markersLoaded = true;
+      });
+    }
   }
 
   @override
@@ -89,23 +152,57 @@ class _MapsScreenState extends State<MapsScreen> {
     _mapController?.animateCamera(CameraUpdate.zoomOut());
   }
 
+  Color _getNetworkColor(String network) {
+    if (network.toLowerCase().contains('tata')) return AppColors.brandTata;
+    if (network.toLowerCase().contains('statiq')) return AppColors.primary;
+    if (network.toLowerCase().contains('jio')) return AppColors.accentPurple;
+    if (network.toLowerCase().contains('zeon')) return AppColors.secondary;
+    return AppColors.accent;
+  }
+
+  String _getHeroImage(String network) {
+    if (network.toLowerCase().contains('tata')) {
+      return 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=800&q=80';
+    }
+    if (network.toLowerCase().contains('statiq')) {
+      return 'https://images.unsplash.com/photo-1620891549027-942fdc95d3f5?auto=format&fit=crop&w=800&q=80';
+    }
+    if (network.toLowerCase().contains('jio')) {
+      return 'https://images.unsplash.com/photo-1617783921319-7977eb780131?auto=format&fit=crop&w=800&q=80';
+    }
+    return 'https://images.unsplash.com/photo-1593941707882-a5bba14938cb?auto=format&fit=crop&w=800&q=80';
+  }
+
   @override
   Widget build(BuildContext context) {
     final mapsProvider = context.watch<MapsProvider>();
 
-    // Build custom markers
+    // Build custom markers dynamically
     final Set<Marker> mapMarkers = mapsProvider.getFilteredMarkers().map((m) {
-      double hue = BitmapDescriptor.hueCyan;
-      if (m.status == MarkerStatus.busy) {
-        hue = BitmapDescriptor.hueOrange;
-      } else if (m.status == MarkerStatus.offline) {
-        hue = BitmapDescriptor.hueRed;
+      final isSelected = mapsProvider.selectedMarker?.id == m.id;
+      BitmapDescriptor icon = BitmapDescriptor.defaultMarker;
+      if (_markersLoaded) {
+        if (isSelected) {
+          icon = _markerSelected!;
+        } else {
+          switch (m.status) {
+            case MarkerStatus.available:
+              icon = _markerAvailable!;
+              break;
+            case MarkerStatus.busy:
+              icon = _markerBusy!;
+              break;
+            case MarkerStatus.offline:
+              icon = _markerOffline!;
+              break;
+          }
+        }
       }
 
       return Marker(
         markerId: MarkerId(m.id),
         position: LatLng(m.latitude, m.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(hue),
+        icon: icon,
         onTap: () {
           mapsProvider.setSelectedMarker(m);
         },
@@ -158,6 +255,7 @@ class _MapsScreenState extends State<MapsScreen> {
               compassEnabled: true,
               trafficEnabled: _trafficEnabled,
               mapType: _mapType,
+              buildingsEnabled: true,
               onTap: (_) {
                 // Clicking on empty map area resets selected card
                 mapsProvider.setSelectedMarker(null);
@@ -178,7 +276,8 @@ class _MapsScreenState extends State<MapsScreen> {
                   // Top Search Console
                   GlassContainer(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    borderRadius: 20,
+                    borderRadius: 24,
+                    animateBorder: true,
                     child: Row(
                       children: [
                         const HugeIcon(
@@ -191,10 +290,10 @@ class _MapsScreenState extends State<MapsScreen> {
                           child: TextField(
                             controller: _searchController,
                             focusNode: _searchFocusNode,
-                            style: const TextStyle(color: Colors.white, fontSize: 15),
-                            decoration: const InputDecoration(
-                              hintText: 'Search city, area, network...',
-                              hintStyle: TextStyle(color: Colors.grey),
+                            style: GoogleFonts.outfit(color: Colors.white, fontSize: 15),
+                            decoration: InputDecoration(
+                              hintText: 'Search city, area, charger, network...',
+                              hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 14),
                               border: InputBorder.none,
                               enabledBorder: InputBorder.none,
                               focusedBorder: InputBorder.none,
@@ -214,25 +313,36 @@ class _MapsScreenState extends State<MapsScreen> {
                               mapsProvider.searchSuggestions('');
                             },
                           ),
-                        Container(width: 1, height: 24, color: Colors.white10, margin: const EdgeInsets.symmetric(horizontal: 8)),
+                        Container(
+                          width: 1,
+                          height: 24,
+                          color: Colors.white10,
+                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
                         IconButton(
-                          icon: const HugeIcon(icon: HugeIcons.strokeRoundedFilter, color: AppColors.textSecondary, size: 20),
+                          icon: const HugeIcon(
+                            icon: HugeIcons.strokeRoundedFilter,
+                            color: AppColors.textSecondary,
+                            size: 20,
+                          ),
                           onPressed: () => _showAdvancedFiltersModal(context, mapsProvider),
                         ),
                       ],
                     ),
                   ),
 
-                  // Autocomplete Auto Suggestion overlay
+                  // Autocomplete Suggestion List overlay
                   if (_isSuggestionsVisible && mapsProvider.suggestions.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
                       constraints: const BoxConstraints(maxHeight: 250),
                       child: GlassContainer(
-                        borderRadius: 20,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        borderRadius: 24,
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                        animateBorder: false,
                         child: ListView.builder(
                           shrinkWrap: true,
+                          padding: EdgeInsets.zero,
                           itemCount: mapsProvider.suggestions.length,
                           itemBuilder: (context, idx) {
                             final sug = mapsProvider.suggestions[idx];
@@ -240,7 +350,7 @@ class _MapsScreenState extends State<MapsScreen> {
                               leading: const Icon(Icons.location_on_outlined, color: AppColors.primary, size: 18),
                               title: Text(
                                 sug['description'] as String,
-                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -358,12 +468,20 @@ class _MapsScreenState extends State<MapsScreen> {
               child: GlassContainer(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 borderRadius: 16,
+                animateBorder: true,
                 child: Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), shape: BoxShape.circle),
-                      child: const HugeIcon(icon: HugeIcons.strokeRoundedRoute01, color: AppColors.primary, size: 20),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const HugeIcon(
+                        icon: HugeIcons.strokeRoundedRoute01,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -372,12 +490,19 @@ class _MapsScreenState extends State<MapsScreen> {
                         children: [
                           Text(
                             'ETA: ${mapsProvider.routeDuration}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Distance: ${mapsProvider.routeDistance} • Est. Battery Needed: 12%',
-                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                            'Distance: ${mapsProvider.routeDistance} • Est. Battery Needed: ${mapsProvider.estimatedBatteryUsage}%',
+                            style: GoogleFonts.outfit(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),
@@ -391,7 +516,7 @@ class _MapsScreenState extends State<MapsScreen> {
               ),
             ),
 
-          // Sliding Glassmorphic Charger Details Bottom Sheet
+          // Draggable Bottom Sheet for selected station
           if (mapsProvider.selectedMarker != null)
             _buildInteractiveBottomSheet(mapsProvider, context),
         ],
@@ -399,7 +524,7 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
-  // Filter Carousel Item Badge
+  // Filter Chip Badge
   Widget _buildFilterBadge(String label, bool isSelected, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(right: 8.0),
@@ -419,7 +544,7 @@ class _MapsScreenState extends State<MapsScreen> {
           child: Center(
             child: Text(
               label,
-              style: TextStyle(
+              style: GoogleFonts.outfit(
                 color: isSelected ? Colors.black : Colors.white,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 fontSize: 11,
@@ -431,7 +556,7 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
-  // Right Side control console button
+  // Map control buttons
   Widget _buildMapControlBtn({
     required List<List<dynamic>> icon,
     required bool isActive,
@@ -462,11 +587,12 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
-  // Premium Tesla/Apple style sliding bottom sheet
+  // Draggable Bottom Sheet redesign
   Widget _buildInteractiveBottomSheet(MapsProvider mapsProvider, BuildContext context) {
     final m = mapsProvider.selectedMarker!;
     final sessionProvider = context.watch<ChargingSessionProvider>();
     final activeSession = sessionProvider.activeSession;
+    final netColor = _getNetworkColor(m.network);
 
     Color statusColor = AppColors.secondary;
     String statusText = 'Available';
@@ -487,18 +613,22 @@ class _MapsScreenState extends State<MapsScreen> {
           decoration: BoxDecoration(
             color: AppColors.card.withOpacity(0.95),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, spreadRadius: 5)
+              BoxShadow(
+                color: Colors.black.withOpacity(0.6),
+                blurRadius: 30,
+                spreadRadius: 8,
+              )
             ],
           ),
           child: ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
             child: ListView(
               controller: scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               children: [
-                // Top notch bar
+                // Pull drag bar
                 Center(
                   child: Container(
                     width: 48,
@@ -508,7 +638,19 @@ class _MapsScreenState extends State<MapsScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Name & Brand Network Info
+                // Station Hero image
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.network(
+                    _getHeroImage(m.network),
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Title & Network Brand
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -516,22 +658,70 @@ class _MapsScreenState extends State<MapsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(m.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-                          const SizedBox(height: 4),
-                          Text(m.description, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          Text(
+                            m.title,
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(color: netColor, shape: BoxShape.circle),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                m.network,
+                                style: GoogleFonts.outfit(
+                                  color: netColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.star, color: AppColors.warning, size: 12),
+                              const SizedBox(width: 2),
+                              Text(
+                                m.rating.toString(),
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            m.description,
+                            style: GoogleFonts.outfit(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: statusColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: statusColor.withOpacity(0.3)),
                       ),
                       child: Text(
                         statusText,
-                        style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
+                        style: GoogleFonts.outfit(
+                          color: statusColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -543,36 +733,43 @@ class _MapsScreenState extends State<MapsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _buildSheetMetric('POWER', m.power, HugeIcons.strokeRoundedFlash, AppColors.primary),
-                    _buildSheetMetric('CONNECTORS', m.availableStalls, HugeIcons.strokeRoundedFuelStation, AppColors.secondary),
+                    _buildSheetMetric('STALLS AVAILABLE', m.availableStalls, HugeIcons.strokeRoundedFuelStation, AppColors.secondary),
                     _buildSheetMetric('RATING', m.rating.toString(), HugeIcons.strokeRoundedStar, AppColors.warning),
                     _buildSheetMetric('PRICE', m.price ?? '₹21/kWh', HugeIcons.strokeRoundedLicense, Colors.white),
                   ],
                 ),
                 const SizedBox(height: 24),
 
-                // Primary action triggers
+                // Primary Actions Grid
                 Row(
                   children: [
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
-                          // Draw Directions polyline on Google Map
+                          // Route navigation polyline drawing
                           mapsProvider.calculateRoute(LatLng(m.latitude, m.longitude));
                         },
                         child: Container(
                           height: 52,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.08),
+                            color: Colors.white.withOpacity(0.06),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white10),
+                            border: Border.all(color: Colors.white.withOpacity(0.08)),
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.navigation_outlined, color: AppColors.primary, size: 18),
-                                SizedBox(width: 8),
-                                Text('Directions', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                                const Icon(Icons.navigation_outlined, color: AppColors.primary, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Navigate',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -581,37 +778,36 @@ class _MapsScreenState extends State<MapsScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      flex: 2,
                       child: GestureDetector(
                         onTap: () {
-                          // If there's an active session, go directly to Live screen
-                          if (activeSession != null) {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveChargingScreen()));
-                          } else {
-                            // Start Charging sequence
-                            final auth = context.read<AuthProvider>();
-                            sessionProvider.startSession(
-                              auth.user?.id ?? 'default_user',
-                              m.id,
-                              'ccs2_1',
-                            );
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveChargingScreen()));
-                          }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Reservation scheduled for ${m.title}!'),
+                              backgroundColor: AppColors.secondary,
+                            ),
+                          );
                         },
                         child: Container(
                           height: 52,
                           decoration: BoxDecoration(
-                            gradient: AppColors.chargingGradient,
+                            color: Colors.white.withOpacity(0.06),
                             borderRadius: BorderRadius.circular(16),
-                            boxShadow: AppColors.neonShadow(color: AppColors.primary, blurRadius: 10),
+                            border: Border.all(color: Colors.white.withOpacity(0.08)),
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.bolt, color: Colors.black, size: 20),
-                                SizedBox(width: 8),
-                                Text('Start Charging', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14)),
+                                const Icon(Icons.calendar_today_outlined, color: AppColors.warning, size: 16),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Book Slot',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -620,30 +816,93 @@ class _MapsScreenState extends State<MapsScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+
+                // Charge Now Primary Action
+                GestureDetector(
+                  onTap: () {
+                    if (activeSession != null) {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveChargingScreen()));
+                    } else {
+                      final auth = context.read<AuthProvider>();
+                      sessionProvider.startSession(
+                        auth.user?.id ?? 'default_user',
+                        m.id,
+                        'ccs2_1',
+                      );
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveChargingScreen()));
+                    }
+                  },
+                  child: Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.chargingGradient,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: AppColors.neonShadow(color: AppColors.primary, blurRadius: 12),
+                    ),
+                    child: Center(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.bolt, color: Colors.black, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Start Charging',
+                            style: GoogleFonts.outfit(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
                 const SizedBox(height: 28),
 
-                // Google Places Nearby search lists overlay (Google Maps Style)
-                const Text('NEARBY AMENITIES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white70, letterSpacing: 1.0)),
+                // Nearby places list
+                Text(
+                  'NEARBY AMENITIES',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: Colors.white70,
+                    letterSpacing: 1.2,
+                  ),
+                ),
                 const SizedBox(height: 12),
-                
+
                 mapsProvider.isLoadingPlaces
-                    ? const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()))
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
                     : mapsProvider.nearbyPlaces.isEmpty
-                        ? const Text('No surrounding places discovered.', style: TextStyle(color: Colors.grey, fontSize: 13))
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              'No surrounding places found.',
+                              style: GoogleFonts.outfit(color: Colors.grey, fontSize: 13),
+                            ),
+                          )
                         : SizedBox(
-                            height: 110,
+                            height: 130,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
                               itemCount: mapsProvider.nearbyPlaces.length,
                               itemBuilder: (context, idx) {
                                 final pl = mapsProvider.nearbyPlaces[idx];
                                 return Container(
-                                  width: 160,
+                                  width: 170,
                                   margin: const EdgeInsets.only(right: 12),
                                   decoration: BoxDecoration(
                                     color: Colors.white.withOpacity(0.03),
                                     borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: Colors.white10),
+                                    border: Border.all(color: Colors.white.withOpacity(0.08)),
                                   ),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -652,18 +911,34 @@ class _MapsScreenState extends State<MapsScreen> {
                                         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                                         child: Image.network(
                                           pl.imageUrl,
-                                          height: 50,
+                                          height: 60,
                                           width: double.infinity,
                                           fit: BoxFit.cover,
                                         ),
                                       ),
                                       Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(pl.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                            Text('${pl.distance.toInt()}m away • ${pl.type.toUpperCase()}', style: const TextStyle(color: Colors.grey, fontSize: 8)),
+                                            Text(
+                                              pl.name,
+                                              style: GoogleFonts.outfit(
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '${pl.distance.toInt()}m away • ${pl.type.toUpperCase()}',
+                                              style: GoogleFonts.outfit(
+                                                color: Colors.grey,
+                                                fontSize: 9,
+                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),
@@ -674,15 +949,26 @@ class _MapsScreenState extends State<MapsScreen> {
                             ),
                           ),
 
-                const SizedBox(height: 24),
-                // Detailed full screen info trigger
+                const SizedBox(height: 20),
+
+                // Link to full screen specs
                 TextButton(
                   onPressed: () {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: m)));
                   },
-                  child: const Text('View Full Specifications & Details', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'View Full Specifications & Details',
+                        style: GoogleFonts.outfit(color: AppColors.primary, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.arrow_forward, color: AppColors.primary, size: 14),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 30),
               ],
             ),
           ),
@@ -696,14 +982,28 @@ class _MapsScreenState extends State<MapsScreen> {
       children: [
         HugeIcon(icon: icon, color: color, size: 20),
         const SizedBox(height: 6),
-        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+        Text(
+          value,
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 8, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            fontSize: 8,
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
 
-  // Advanced Filters full bottom modal
+  // Advanced Filters Bottom Modal redesign
   void _showAdvancedFiltersModal(BuildContext context, MapsProvider provider) {
     showModalBottomSheet(
       context: context,
@@ -718,19 +1018,38 @@ class _MapsScreenState extends State<MapsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('FILTER OPTIONS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                  Text(
+                    'FILTER OPTIONS',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.white,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   
                   // Connectors
-                  const Text('CONNECTORS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white60)),
+                  Text(
+                    'CONNECTORS',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      color: Colors.white60,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     children: ['CCS2', 'Type 2', 'CHAdeMO'].map((conn) {
                       final active = provider.selectedConnectors.contains(conn);
                       return ChoiceChip(
-                        label: Text(conn),
+                        label: Text(
+                          conn,
+                          style: GoogleFonts.outfit(color: active ? Colors.black : Colors.white),
+                        ),
                         selected: active,
+                        selectedColor: AppColors.primary,
+                        backgroundColor: Colors.white.withOpacity(0.06),
                         onSelected: (_) {
                           provider.toggleConnectorFilter(conn);
                           setModalState(() {});
@@ -741,15 +1060,27 @@ class _MapsScreenState extends State<MapsScreen> {
                   const SizedBox(height: 16),
 
                   // Power Speed
-                  const Text('SPEED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white60)),
+                  Text(
+                    'SPEED',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      color: Colors.white60,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     children: ['Fast', 'Ultra Fast', 'AC'].map((spd) {
                       final active = provider.selectedSpeeds.contains(spd);
                       return ChoiceChip(
-                        label: Text(spd),
+                        label: Text(
+                          spd,
+                          style: GoogleFonts.outfit(color: active ? Colors.black : Colors.white),
+                        ),
                         selected: active,
+                        selectedColor: AppColors.primary,
+                        backgroundColor: Colors.white.withOpacity(0.06),
                         onSelected: (_) {
                           provider.toggleSpeedFilter(spd);
                           setModalState(() {});
@@ -764,7 +1095,10 @@ class _MapsScreenState extends State<MapsScreen> {
                     children: [
                       Expanded(
                         child: TextButton(
-                          child: const Text('Reset All', style: TextStyle(color: Colors.redAccent)),
+                          child: Text(
+                            'Reset All',
+                            style: GoogleFonts.outfit(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                          ),
                           onPressed: () {
                             provider.clearAllFilters();
                             Navigator.pop(context);
@@ -774,8 +1108,16 @@ class _MapsScreenState extends State<MapsScreen> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: ElevatedButton(
-                          child: const Text('Apply'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                           onPressed: () => Navigator.pop(context),
+                          child: Text(
+                            'Apply',
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ],

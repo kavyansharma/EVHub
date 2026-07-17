@@ -60,6 +60,22 @@ class MapsProvider extends ChangeNotifier {
   String? get selectedStatusFilter => _selectedStatusFilter;
   String? get selectedNetwork => _selectedNetwork;
 
+  int get estimatedBatteryUsage {
+    if (_routeDistance == null) return 0;
+    try {
+      final distanceString = _routeDistance!.replaceAll(RegExp(r'[^0-9.]'), '');
+      final distance = double.tryParse(distanceString);
+      if (distance == null) return 0;
+      final isMeters = _routeDistance!.contains('m') && !_routeDistance!.contains('km');
+      final distanceKm = isMeters ? distance / 1000.0 : distance;
+      final energyNeeded = distanceKm * 0.15; // 0.15 kWh per km
+      final percentage = (energyNeeded / 40.0) * 100; // 40 kWh capacity
+      return percentage.clamp(1.0, 100.0).round();
+    } catch (e) {
+      return 0;
+    }
+  }
+
   // Fetch location and load real stations via Nearby Search API
   Future<void> fetchCurrentLocationAndStations() async {
     _isLoading = true;
@@ -71,7 +87,12 @@ class MapsProvider extends ChangeNotifier {
         await refreshStations();
       }
     } catch (e) {
-      debugPrint("Error fetching maps location: $e");
+      debugPrint("Error fetching maps location, falling back: $e");
+      _currentLocation = {
+        'latitude': 28.6304,
+        'longitude': 77.2177, // Connaught Place, New Delhi default
+      };
+      await refreshStations();
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -100,7 +121,13 @@ class MapsProvider extends ChangeNotifier {
       return;
     }
     try {
-      _suggestions = await _mapsService.getAutocompleteSuggestions(query);
+      double? lat = _currentLocation?['latitude'];
+      double? lng = _currentLocation?['longitude'];
+      _suggestions = await _mapsService.getAutocompleteSuggestions(
+        query,
+        currentLat: lat,
+        currentLng: lng,
+      );
       notifyListeners();
     } catch (e) {
       debugPrint("Autocomplete suggest error: $e");

@@ -27,26 +27,41 @@ class PlaceModel {
 class PlacesService {
   final String _apiKey = AppConstants.googleMapsApiKey;
 
+  // Build the request URI, supporting CORS proxy on Web
+  Uri _buildUri(String path, Map<String, String> queryParameters) {
+    final baseUri = Uri.https('maps.googleapis.com', path, queryParameters);
+    if (kIsWeb) {
+      return Uri.parse('https://corsproxy.io/?${Uri.encodeComponent(baseUri.toString())}');
+    }
+    return baseUri;
+  }
+
   Future<List<PlaceModel>> getNearbyPlaces(double lat, double lng) async {
-    // We will query for standard amenities: restaurant, cafe, lodging (hotel), shopping_mall, hospital, washroom.
-    // To minimize multiple round-trip HTTP overhead, we query Nearby Search for general amenities, and if CORS blocks, fallback gracefully.
-    final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=$lat,$lng&radius=1000&type=restaurant|cafe|lodging|shopping_mall|hospital&key=$_apiKey');
+    // Query for standard amenities: restaurant, cafe, lodging, shopping_mall, hospital, parking
+    // We search for them using a keyword search containing these types.
+    final queryParams = {
+      'location': '$lat,$lng',
+      'radius': '1000',
+      'keyword': 'restaurant OR cafe OR hotel OR hospital OR mall OR parking',
+      'key': _apiKey,
+    };
+    
+    final url = _buildUri('/maps/api/place/nearbysearch/json', queryParams);
 
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final results = data['results'] as List<dynamic>?;
-        if (results != null && results.isNotEmpty) {
+        if (results != null) {
           return results.map((place) => _parsePlaceToModel(place, lat, lng)).toList();
         }
       }
     } catch (e) {
-      debugPrint("Google Places Nearby amenities error/CORS fallback: $e");
+      debugPrint("Google Places Nearby amenities error: $e");
     }
 
-    return _getFallbackPlaces(lat, lng);
+    return [];
   }
 
   PlaceModel _parsePlaceToModel(Map<String, dynamic> place, double lat, double lng) {
@@ -63,6 +78,8 @@ class PlacesService {
       type = 'shopping_mall';
     } else if (types.contains('hospital')) {
       type = 'hospital';
+    } else if (types.contains('parking')) {
+      type = 'parking';
     }
 
     final geometry = place['geometry']?['location'];
@@ -84,6 +101,7 @@ class PlacesService {
       'atm': 'https://images.unsplash.com/photo-1620714223084-8fcacc6dfd8d?q=80&w=500&auto=format&fit=crop',
       'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=500&auto=format&fit=crop',
       'hospital': 'https://images.unsplash.com/photo-1586773860418-d3b3de97e663?q=80&w=500&auto=format&fit=crop',
+      'parking': 'https://images.unsplash.com/photo-1506015391300-4802dc74de2e?q=80&w=500&auto=format&fit=crop',
     };
 
     String imageUrl = images[type] ?? images['restaurant']!;
@@ -103,56 +121,6 @@ class PlacesService {
       rating: rating,
       imageUrl: imageUrl,
     );
-  }
-
-  List<PlaceModel> _getFallbackPlaces(double lat, double lng) {
-    final seed = (lat * 100000 + lng * 100000).toInt().abs();
-    final random = math.Random(seed);
-
-    final types = ['restaurant', 'cafe', 'shopping_mall', 'washroom', 'hotel', 'hospital'];
-    final names = {
-      'restaurant': ['Haldiram\'s', 'Bikanervala', 'Sagar Ratna', 'Barbeque Nation', 'Pizza Hut', 'Dhaba 11', 'The Spice Route'],
-      'cafe': ['Starbucks', 'Cafe Coffee Day', 'Blue Tokai Coffee Roasters', 'Third Wave Coffee', 'Chaayos', 'The Coffee Bean'],
-      'shopping_mall': ['Pacific Mall', 'Select Citywalk', 'DLF Promenade', 'Phoenix Marketcity', 'Nexus Mall'],
-      'washroom': ['Premium Public Restroom', 'Clean Toilet Lounge', 'Highway Rest Stop Washroom'],
-      'hotel': ['Taj Palace', 'Radisson Blu Hotel', 'Lemon Tree Premier', 'Holiday Inn', 'The Leela', 'Hyatt Regency'],
-      'hospital': ['Max Super Speciality Hospital', 'Fortis Healthcare', 'Medanta Mediclinic', 'Apollo Clinic'],
-    };
-    
-    final images = {
-      'restaurant': 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=500&auto=format&fit=crop',
-      'cafe': 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=500&auto=format&fit=crop',
-      'shopping_mall': 'https://images.unsplash.com/photo-1519567281027-615214041b61?q=80&w=500&auto=format&fit=crop',
-      'washroom': 'https://images.unsplash.com/photo-1628156106631-f92dcb4a9699?q=80&w=500&auto=format&fit=crop',
-      'hotel': 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=500&auto=format&fit=crop',
-      'hospital': 'https://images.unsplash.com/photo-1586773860418-d3b3de97e663?q=80&w=500&auto=format&fit=crop',
-    };
-
-    List<PlaceModel> places = [];
-    final numPlaces = 6 + random.nextInt(5);
-    
-    for (int i = 0; i < numPlaces; i++) {
-      final type = types[random.nextInt(types.length)];
-      final nameList = names[type]!;
-      final name = nameList[random.nextInt(nameList.length)];
-      
-      final distance = (random.nextDouble() * 700) + 80;
-      final rating = 3.8 + (random.nextDouble() * 1.2);
-      final isOpen = random.nextDouble() > 0.15;
-
-      places.add(PlaceModel(
-        id: 'place_${seed}_$i',
-        name: name,
-        type: type,
-        distance: distance,
-        isOpen: isOpen,
-        rating: rating,
-        imageUrl: images[type]!,
-      ));
-    }
-
-    places.sort((a, b) => a.distance.compareTo(b.distance));
-    return places;
   }
 
   double _calculateDistanceMeters(double lat1, double lon1, double lat2, double lon2) {

@@ -1,7 +1,20 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../models/trip_plan_model.dart';
+import '../core/constants/app_constants.dart';
 
 class DirectionsService {
-  // TODO: Integrate Google Directions API
+  final String _apiKey = AppConstants.googleMapsApiKey;
+
+  // Helper for web proxy
+  Uri _buildUri(String path, Map<String, String> queryParameters) {
+    final baseUri = Uri.https('maps.googleapis.com', path, queryParameters);
+    if (kIsWeb) {
+      return Uri.parse('https://corsproxy.io/?${Uri.encodeComponent(baseUri.toString())}');
+    }
+    return baseUri;
+  }
 
   Future<TripPlanModel> calculateAdvancedTrip({
     required TripPlanModel basePlan,
@@ -9,11 +22,30 @@ class DirectionsService {
     required double vehicleEfficiency, // km/kWh
     required double batteryCapacityKw,
   }) async {
-    // Simulated calculation for directions & environmental factors
-    await Future.delayed(const Duration(milliseconds: 800));
+    double distanceKm = 120.0; // Fallback
+    
+    // Call Google Directions API to get actual distance between basePlan start and end coordinates
+    final queryParams = {
+      'origin': '${basePlan.startLat},${basePlan.startLng}',
+      'destination': '${basePlan.endLat},${basePlan.endLng}',
+      'key': _apiKey,
+    };
+    final url = _buildUri('/maps/api/directions/json', queryParams);
 
-    // Base distance
-    const double distanceKm = 120.0; // Simulated distance
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final routes = data['routes'] as List<dynamic>?;
+        if (routes != null && routes.isNotEmpty) {
+          final leg = routes[0]['legs'][0];
+          final distanceMeters = (leg['distance']['value'] as num).toDouble();
+          distanceKm = distanceMeters / 1000.0;
+        }
+      }
+    } catch (e) {
+      debugPrint("DirectionsService API error: $e");
+    }
 
     // Environmental impacts
     double impactMultiplier = 1.0;

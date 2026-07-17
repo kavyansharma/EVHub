@@ -22,5 +22,5 @@ class AppConstants {
   static const String colStations = 'stations';
   
   // Google Maps API Key
-  static const String googleMapsApiKey = 'AIzaSyCEo5B22e8tT6UUIMgI8BA_jXLdLMQsmAg';
+  static const String googleMapsApiKey = 'AIzaSyBkRQGLVDyA-tvIbGdK63H49GiF2yS12tw';
 }

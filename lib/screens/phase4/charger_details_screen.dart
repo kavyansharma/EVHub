@@ -209,7 +209,7 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: _buildMetricCard('PRICE', '₹21/kWh', HugeIcons.strokeRoundedLicense, Colors.white),
+                            child: _buildMetricCard('PRICE', marker.price ?? '₹21/kWh', HugeIcons.strokeRoundedLicense, Colors.white),
                           ),
                         ],
                       ),
@@ -221,11 +221,17 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
                       ),
                       const SizedBox(height: 12),
-                      _buildConnectorRow('CCS2 Dual (DC Fast)', '120 kW SuperSpeed', '₹21.00 / kWh', true),
-                      const SizedBox(height: 12),
-                      _buildConnectorRow('Type 2 AC', '22 kW SmartCharge', '₹15.00 / kWh', true),
-                      const SizedBox(height: 12),
-                      _buildConnectorRow('CHAdeMO Fast', '50 kW FastCharge', '₹18.00 / kWh', false),
+                      Column(
+                        children: marker.connectors.map((connector) {
+                          final isCCS2 = connector.toUpperCase().contains('CCS2');
+                          final label = isCCS2 ? '$connector (DC Fast)' : '$connector (AC SmartCharge)';
+                          final desc = isCCS2 ? '${marker.power} SuperSpeed' : '22 kW SmartCharge';
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12.0),
+                            child: _buildConnectorRow(label, desc, marker.price ?? '₹21/kWh', true),
+                          );
+                        }).toList(),
+                      ),
                       
                       const SizedBox(height: 28),
 

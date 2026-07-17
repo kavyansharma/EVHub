@@ -5,156 +5,61 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/map_marker_model.dart';
 import '../core/constants/app_constants.dart';
-import 'dart:math' as math;
 
 class MapsService {
   final String _apiKey = AppConstants.googleMapsApiKey;
 
-  // Real fallback EV stations list with coordinates in major Indian hubs (Delhi, Mumbai, Bengaluru)
-  static final List<Map<String, dynamic>> _realStationsFallbackDb = [
-    {
-      'id': 'fallback_tata_cp',
-      'title': 'Tata Power EZ Charge Hub',
-      'description': 'Outer Circle, Connaught Place, New Delhi',
-      'latitude': 28.6304,
-      'longitude': 77.2177,
-      'network': 'Tata Power EZ Charge',
-      'rating': 4.8,
-      'power': '60kW',
-      'availableStalls': '3/4',
-      'status': MarkerStatus.available,
-      'connectors': ['CCS2', 'Type 2'],
-      'powerType': 'Fast',
-      'price': '₹21/kWh',
-      'photoUrl': 'https://images.unsplash.com/photo-1563720223185-11003d516935?q=80&w=600&auto=format&fit=crop',
-    },
-    {
-      'id': 'fallback_statiq_cyberhub',
-      'title': 'Statiq Charging Hub',
-      'description': 'Cyber Hub, DLF Phase 2, Gurugram',
-      'latitude': 28.4950,
-      'longitude': 77.0878,
-      'network': 'Statiq',
-      'rating': 4.5,
-      'power': '120kW',
-      'availableStalls': '5/6',
-      'status': MarkerStatus.available,
-      'connectors': ['CCS2', 'CHAdeMO'],
-      'powerType': 'Ultra Fast',
-      'price': '₹24/kWh',
-      'photoUrl': 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=600&auto=format&fit=crop',
-    },
-    {
-      'id': 'fallback_jiobp_rcp',
-      'title': 'Jio-bp Pulse Hub',
-      'description': 'Reliance Corporate Park, Ghansoli, Navi Mumbai',
-      'latitude': 19.1026,
-      'longitude': 73.0135,
-      'network': 'Jio-bp Pulse',
-      'rating': 4.9,
-      'power': '150kW',
-      'availableStalls': '0/8',
-      'status': MarkerStatus.busy,
-      'connectors': ['CCS2'],
-      'powerType': 'Ultra Fast',
-      'price': '₹22/kWh',
-      'photoUrl': 'https://images.unsplash.com/photo-1563720223523-491ff04651de?q=80&w=600&auto=format&fit=crop',
-    },
-    {
-      'id': 'fallback_zeon_yeshwantpur',
-      'title': 'Zeon Charging Station',
-      'description': 'Taj Yeshwantpur, Peenya, Bengaluru',
-      'latitude': 13.0305,
-      'longitude': 77.5342,
-      'network': 'Zeon',
-      'rating': 4.9,
-      'power': '240kW',
-      'availableStalls': '4/6',
-      'status': MarkerStatus.available,
-      'connectors': ['CCS2'],
-      'powerType': 'Ultra Fast',
-      'price': '₹25/kWh',
-      'photoUrl': 'https://images.unsplash.com/photo-1529369623266-f5264b696110?q=80&w=600&auto=format&fit=crop',
-    },
-    {
-      'id': 'fallback_shell_yeshwantpur',
-      'title': 'Shell Recharge',
-      'description': 'Yeshwantpur Industrial Area, Bengaluru',
-      'latitude': 13.0285,
-      'longitude': 77.5402,
-      'network': 'Shell Recharge',
-      'rating': 4.7,
-      'power': '150kW',
-      'availableStalls': '3/4',
-      'status': MarkerStatus.available,
-      'connectors': ['CCS2', 'Type 2'],
-      'powerType': 'Ultra Fast',
-      'price': '₹23/kWh',
-      'photoUrl': 'https://images.unsplash.com/photo-1593941707882-a5bba14938c7?q=80&w=600&auto=format&fit=crop',
-    },
-    {
-      'id': 'fallback_chargezone_exp',
-      'title': 'ChargeZone Charger',
-      'description': 'Food Mall, Mumbai-Pune Expressway, Khalapur',
-      'latitude': 18.7560,
-      'longitude': 73.3421,
-      'network': 'ChargeZone',
-      'rating': 4.2,
-      'power': '30kW',
-      'availableStalls': '0/2',
-      'status': MarkerStatus.offline,
-      'connectors': ['CCS2'],
-      'powerType': 'Fast',
-      'price': '₹19/kWh',
-      'photoUrl': 'https://images.unsplash.com/photo-1563720223185-11003d516935?q=80&w=600&auto=format&fit=crop',
-    },
-    {
-      'id': 'fallback_bolt_koramangala',
-      'title': 'Bolt Earth Point',
-      'description': 'Koramangala 4th Block, Bengaluru',
-      'latitude': 12.9352,
-      'longitude': 77.6244,
-      'network': 'Bolt Earth',
-      'rating': 4.0,
-      'power': '22kW',
-      'availableStalls': '2/2',
-      'status': MarkerStatus.available,
-      'connectors': ['Type 2'],
-      'powerType': 'AC',
-      'price': '₹15/kWh',
-      'photoUrl': 'https://images.unsplash.com/photo-1558441719-ff34b0524a24?q=80&w=600&auto=format&fit=crop',
+  // Build the request URI, supporting CORS proxy on Web
+  Uri _buildUri(String path, Map<String, String> queryParameters) {
+    final baseUri = Uri.https('maps.googleapis.com', path, queryParameters);
+    if (kIsWeb) {
+      return Uri.parse('https://corsproxy.io/?${Uri.encodeComponent(baseUri.toString())}');
     }
-  ];
+    return baseUri;
+  }
 
   // 1. Google Places Nearby Search for EV Chargers
   Future<List<MapMarkerModel>> getNearbyStations(double lat, double lng, double radiusKm) async {
     final double radiusMeters = radiusKm * 1000;
-    final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=$lat,$lng&radius=${radiusMeters.toInt()}&keyword=EV%20Charging%20Station&key=$_apiKey');
+    final queryParams = {
+      'location': '$lat,$lng',
+      'radius': '${radiusMeters.toInt()}',
+      'keyword': 'EV Charging Station',
+      'key': _apiKey,
+    };
+    final url = _buildUri('/maps/api/place/nearbysearch/json', queryParams);
 
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final results = data['results'] as List<dynamic>?;
-        if (results != null && results.isNotEmpty) {
+        if (results != null) {
           return results.map((place) => _parsePlaceToMarker(place, lat, lng)).toList();
         }
       }
     } catch (e) {
-      // CORS block or Network Error: fall back to real coordinate calculations
-      debugPrint("Google Places Nearby search error/CORS fallback: $e");
+      debugPrint("Google Places Nearby search error: $e");
     }
 
-    return _getFallbackStations(lat, lng, radiusKm);
+    return [];
   }
 
-  // 2. Google Places Autocomplete API
-  Future<List<Map<String, dynamic>>> getAutocompleteSuggestions(String query) async {
+  // 2. Google Places Autocomplete API with Location Bias
+  Future<List<Map<String, dynamic>>> getAutocompleteSuggestions(String query, {double? currentLat, double? currentLng}) async {
     if (query.isEmpty) return [];
-    
-    final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${Uri.encodeComponent(query)}&key=$_apiKey');
+
+    final Map<String, String> queryParams = {
+      'input': query,
+      'key': _apiKey,
+    };
+
+    if (currentLat != null && currentLng != null) {
+      queryParams['location'] = '$currentLat,$currentLng';
+      queryParams['radius'] = '50000'; // 50km bias
+    }
+
+    final url = _buildUri('/maps/api/place/autocomplete/json', queryParams);
 
     try {
       final response = await http.get(url);
@@ -169,30 +74,20 @@ class MapsService {
         }
       }
     } catch (e) {
-      debugPrint("Autocomplete API Error/CORS: $e");
+      debugPrint("Autocomplete API Error: $e");
     }
 
-    // Fallback matching query locally
-    return _realStationsFallbackDb
-        .where((st) =>
-            st['title'].toString().toLowerCase().contains(query.toLowerCase()) ||
-            st['description'].toString().toLowerCase().contains(query.toLowerCase()))
-        .map((st) => {
-              'description': '${st['title']}, ${st['description']}',
-              'place_id': st['id'],
-            })
-        .toList();
+    return [];
   }
 
   // Fetch coordinates of an Autocomplete suggestion
   Future<LatLng?> getPlaceCoordinates(String placeId) async {
-    if (placeId.startsWith('fallback_')) {
-      final match = _realStationsFallbackDb.firstWhere((st) => st['id'] == placeId);
-      return LatLng(match['latitude'], match['longitude']);
-    }
-
-    final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/details/json?place_id=$placeId&fields=geometry&key=$_apiKey');
+    final queryParams = {
+      'place_id': placeId,
+      'fields': 'geometry',
+      'key': _apiKey,
+    };
+    final url = _buildUri('/maps/api/place/details/json', queryParams);
 
     try {
       final response = await http.get(url);
@@ -206,15 +101,19 @@ class MapsService {
         }
       }
     } catch (e) {
-      debugPrint("Place Details Coordinates API error/CORS: $e");
+      debugPrint("Place Details Coordinates API error: $e");
     }
     return null;
   }
 
   // 3. Google Directions API
   Future<Map<String, dynamic>?> getDirections(LatLng origin, LatLng dest) async {
-    final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${dest.latitude},${dest.longitude}&key=$_apiKey');
+    final queryParams = {
+      'origin': '${origin.latitude},${origin.longitude}',
+      'destination': '${dest.latitude},${dest.longitude}',
+      'key': _apiKey,
+    };
+    final url = _buildUri('/maps/api/directions/json', queryParams);
 
     try {
       final response = await http.get(url);
@@ -234,25 +133,10 @@ class MapsService {
         }
       }
     } catch (e) {
-      debugPrint("Directions API error/CORS: $e");
+      debugPrint("Directions API error: $e");
     }
 
-    // High quality mock routing calculation for fallback
-    final distanceKm = _calculateHaversineDistance(origin.latitude, origin.longitude, dest.latitude, dest.longitude);
-    final durationMin = (distanceKm * 2.0).toInt() + 2; // ~30km/h average city routing
-    
-    // Straight line interpolation for web path rendering
-    final path = [
-      origin,
-      LatLng((origin.latitude + dest.latitude) / 2 + 0.002, (origin.longitude + dest.longitude) / 2 - 0.002),
-      dest
-    ];
-
-    return {
-      'distance': '${distanceKm.toStringAsFixed(1)} km',
-      'duration': '$durationMin mins',
-      'points': path,
-    };
+    return null;
   }
 
   // 4. Live GPS with Geolocator
@@ -260,35 +144,31 @@ class MapsService {
     bool serviceEnabled;
     LocationPermission permission;
 
-    try {
-      serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        return {'latitude': 28.6304, 'longitude': 77.2177}; // Connaught Place, New Delhi default
-      }
-
-      permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          return {'latitude': 28.6304, 'longitude': 77.2177};
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        return {'latitude': 28.6304, 'longitude': 77.2177};
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 4),
-      );
-      return {
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-      };
-    } catch (e) {
-      return {'latitude': 28.6304, 'longitude': 77.2177};
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      throw Exception('Location services are disabled.');
     }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        throw Exception('Location permissions are denied.');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      throw Exception('Location permissions are permanently denied.');
+    }
+
+    final position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+      timeLimit: const Duration(seconds: 4),
+    );
+    return {
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+    };
   }
 
   Stream<Position> getPositionStream() {
@@ -377,61 +257,6 @@ class MapsService {
       powerType: powerType,
       openingHours: '24 Hours',
     );
-  }
-
-  // Fallback calculations using actual coordinates filtered by radius
-  List<MapMarkerModel> _getFallbackStations(double lat, double lng, double radiusKm) {
-    List<MapMarkerModel> nearby = [];
-
-    for (var raw in _realStationsFallbackDb) {
-      double stationLat = raw['latitude'] as double;
-      double stationLng = raw['longitude'] as double;
-      double distance = _calculateHaversineDistance(lat, lng, stationLat, stationLng);
-      
-      // Expand nearby radius constraint to keep it fully operational in any region
-      if (distance <= radiusKm || radiusKm >= 100.0) {
-        nearby.add(
-          MapMarkerModel(
-            id: raw['id'] as String,
-            title: raw['title'] as String,
-            description: '${raw['description']} (${distance.toStringAsFixed(1)} km away)',
-            latitude: stationLat,
-            longitude: stationLng,
-            type: MarkerType.station,
-            network: raw['network'] as String,
-            rating: raw['rating'] as double,
-            power: raw['power'] as String,
-            availableStalls: raw['availableStalls'] as String,
-            status: raw['status'] as MarkerStatus,
-            photoUrl: raw['photoUrl'] as String,
-            address: raw['description'] as String,
-            openStatus: 'Open',
-            price: raw['price'] as String,
-            connectors: List<String>.from(raw['connectors']),
-            powerType: raw['powerType'] as String,
-          ),
-        );
-      }
-    }
-
-    // Sort by proximity
-    nearby.sort((a, b) {
-      double distA = _calculateHaversineDistance(lat, lng, a.latitude, a.longitude);
-      double distB = _calculateHaversineDistance(lat, lng, b.latitude, b.longitude);
-      return distA.compareTo(distB);
-    });
-
-    return nearby;
-  }
-
-  double _calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double p = 0.017453292519943295;
-    final double a = 0.5 -
-        math.cos((lat2 - lat1) * p) / 2 +
-        math.cos(lat1 * p) *
-            math.cos(lat2 * p) *
-            (1 - math.cos((lon2 - lon1) * p)) / 2;
-    return 12742 * math.asin(math.sqrt(a));
   }
 
   // Encoded Polyline decoder algorithm

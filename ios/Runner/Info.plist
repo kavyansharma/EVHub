@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>EVHub needs access to location to display nearby charging stations and route guidance.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>EVHub needs access to location to show nearby charging stations and background tracking.</string>
 </dict>
 </plist>
