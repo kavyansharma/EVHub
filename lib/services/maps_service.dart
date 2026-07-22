@@ -256,6 +256,7 @@ class MapsService {
       connectors: stalls > 4 ? ['CCS2', 'Type 2'] : ['CCS2'],
       powerType: powerType,
       openingHours: '24 Hours',
+      source: 'google_places',
     );
   }
 

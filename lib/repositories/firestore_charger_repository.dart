@@ -43,22 +43,62 @@ class FirestoreChargerRepository {
   ///
   /// Returns an empty list if the collection is empty or if an error occurs.
   Future<List<MapMarkerModel>> getAllChargers() async {
-    debugPrint('[FirestoreChargerRepository] Fetching all chargers...');
+    debugPrint('[FirestoreChargerRepository] ── getAllChargers() START ──');
+    debugPrint(
+      '[FirestoreChargerRepository] Fetching from collection="$_collection" '
+      'in Firestore project: ${_firestore.app.options.projectId}',
+    );
     try {
       final snapshot = await _firestore.collection(_collection).get();
+
+      debugPrint(
+        '[FirestoreChargerRepository] Raw snapshot: '
+        '${snapshot.docs.length} documents found in "$_collection".',
+      );
+
+      if (snapshot.docs.isEmpty) {
+        debugPrint(
+          '[FirestoreChargerRepository] ⚠ Collection "$_collection" is EMPTY. '
+          'No chargers to show.',
+        );
+        return [];
+      }
+
+      // Log every document for diagnostics
+      for (int i = 0; i < snapshot.docs.length; i++) {
+        final doc = snapshot.docs[i];
+        final d = doc.data();
+        final loc = d['location'];
+        debugPrint(
+          '[FirestoreChargerRepository]   [$i] id="${doc.id}" '
+          'name="${d['name']}" '
+          'status="${d['status']}" '
+          'location=${loc != null ? '(${(loc as dynamic).latitude}, ${(loc as dynamic).longitude})' : 'MISSING'} '
+          'connectors=${d['connectorTypes']}',
+        );
+      }
+
       final chargers = snapshot.docs
           .map((doc) => _documentToModel(doc.id, doc.data()))
           .whereType<MapMarkerModel>()
           .toList();
       debugPrint(
-        '[FirestoreChargerRepository] Loaded ${chargers.length} chargers from Firestore.',
+        '[FirestoreChargerRepository] ✓ Loaded ${chargers.length}/${snapshot.docs.length} '
+        'chargers successfully (${snapshot.docs.length - chargers.length} failed to parse).',
       );
       return chargers;
     } on FirebaseException catch (e) {
-      debugPrint(
-        '[FirestoreChargerRepository] FirebaseException in getAllChargers: '
-        'code=${e.code}, message=${e.message}',
-      );
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          '[FirestoreChargerRepository] ❌ Firestore read BLOCKED by security rules. '
+          'Error: permission-denied. Check firestore.rules in the Firebase Console.',
+        );
+      } else {
+        debugPrint(
+          '[FirestoreChargerRepository] FirebaseException in getAllChargers: '
+          'code=${e.code}, message=${e.message}',
+        );
+      }
       return [];
     } catch (e) {
       debugPrint('[FirestoreChargerRepository] Unexpected error in getAllChargers: $e');
@@ -281,6 +321,7 @@ class FirestoreChargerRepository {
         connectors: connectorTypes,
         powerType: powerType,
         openingHours: '24 Hours',
+        source: 'evhub_verified',
       );
     } catch (e) {
       debugPrint(

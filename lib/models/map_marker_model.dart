@@ -25,6 +25,7 @@ class MapMarkerModel {
   final List<String> connectors;
   final String powerType; // 'Fast', 'Ultra Fast', 'AC'
   final String? openingHours;
+  final String source; // 'evhub_verified' or 'google_places'
 
   const MapMarkerModel({
     required this.id,
@@ -47,5 +48,6 @@ class MapMarkerModel {
     this.connectors = const ['CCS2', 'Type 2'],
     this.powerType = 'Fast',
     this.openingHours = '24 Hours',
+    this.source = 'evhub_verified',
   });
 }

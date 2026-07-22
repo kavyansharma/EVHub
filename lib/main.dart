@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'core/routes/app_routes.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/splash/splash_screen.dart';
@@ -35,6 +36,8 @@ import 'repositories/ecosystem_repository.dart';
 import 'repositories/maintenance_repository.dart';
 import 'repositories/route_analytics_repository.dart';
 import 'repositories/admin_repository.dart';
+import 'repositories/firestore_charger_repository.dart';
+import 'repositories/hybrid_charger_repository.dart';
 
 import 'services/vehicle_service.dart';
 import 'services/battery_health_service.dart';
@@ -87,8 +90,17 @@ void main() async {
     debugPrint("Firebase init failed: $e");
     debugPrintStack(stackTrace: stack);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RUNTIME AUDIT BLOCK — prints the full Firestore pipeline to console.
+  // Remove this block before shipping to production.
+  // ═══════════════════════════════════════════════════════════════════════════
+  await _runFirestoreAudit();
+  // ═══════════════════════════════════════════════════════════════════════════
+
   // 1. Initialize core persistence and network services
   final storageService = await StorageService.init();
+
 
   // 2. Initialize repositories
   final userRepository = UserRepositoryImpl();
@@ -134,6 +146,11 @@ void main() async {
   final rewardRepository = RewardRepository();
   final profileRepository = ProfileRepository();
   final mapsRepository = MapsRepository(mapsService: mapsService);
+  final firestoreChargerRepository = FirestoreChargerRepository();
+  final hybridChargerRepository = HybridChargerRepository(
+    firestoreRepository: firestoreChargerRepository,
+    mapsService: mapsService,
+  );
   final chargingSessionRepository = ChargingSessionRepository();
   final healthRepository = HealthRepository();
   final subscriptionRepository = SubscriptionRepository();
@@ -142,6 +159,11 @@ void main() async {
   final maintenanceRepository = MaintenanceRepository();
   final routeAnalyticsRepository = RouteAnalyticsRepository();
   final adminRepository = AdminRepository();
+
+  debugPrint(
+    '[main] ✓ All repositories initialized. '
+    'Firestore project: ${firestoreChargerRepository.runtimeType}',
+  );
 
   runApp(
     MultiProvider(
@@ -219,6 +241,8 @@ void main() async {
           create: (_) => MapsProvider(
             mapsRepository: mapsRepository,
             mapsService: mapsService,
+            firestoreChargerRepository: firestoreChargerRepository,
+            hybridChargerRepository: hybridChargerRepository,
           ),
         ),
         ChangeNotifierProvider(
@@ -292,3 +316,127 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RUNTIME FIRESTORE AUDIT
+// Called once at startup before runApp() to diagnose the Firestore pipeline.
+// Remove before shipping to production.
+// ─────────────────────────────────────────────────────────────────────────────
+Future<void> _runFirestoreAudit() async {
+  // ignore: avoid_print
+  void log(String msg) => debugPrint('[RUNTIME-AUDIT] $msg');
+
+  log('═══════════════════════════════════════════════════════');
+  log('  FIRESTORE CHARGER PIPELINE AUDIT — START');
+  log('═══════════════════════════════════════════════════════');
+
+  // Step 1 — Firebase
+  try {
+    final app = FirebaseFirestore.instance.app;
+    log('Firebase app name    : ${app.name}');
+    log('Firebase projectId   : ${app.options.projectId}');
+    log('Firebase appId       : ${app.options.appId}');
+  } catch (e) {
+    log('Firebase NOT initialized: $e');
+    return;
+  }
+
+  // Step 2 — Firestore fetch
+  const String collection = 'chargers';
+  log('Collection to fetch  : "$collection"');
+
+  late QuerySnapshot<Map<String, dynamic>> snap;
+  try {
+    snap = await FirebaseFirestore.instance.collection(collection).get();
+    log('Firestore fetch OK   : ${snap.docs.length} documents');
+    log('Data from cache      : ${snap.metadata.isFromCache}');
+  } on FirebaseException catch (e) {
+    if (e.code == 'permission-denied') {
+      log('ROOT CAUSE: Firestore read BLOCKED by security rules (permission-denied)');
+    } else {
+      log('Firestore FirebaseException: code=${e.code} msg=${e.message}');
+    }
+    return;
+  } catch (e) {
+    log('Firestore unexpected error: $e');
+    return;
+  }
+
+  if (snap.docs.isEmpty) {
+    log('ROOT CAUSE: Collection "$collection" is EMPTY — zero chargers in Firestore');
+    log('Fix: Add charger documents in Firebase Console');
+    return;
+  }
+
+  // Step 3 — Per-document audit
+  log('──────────────────────────────────────────────────────');
+  const double uLat = 28.6304, uLng = 77.2177, radius = 20.0;
+  int validGeo = 0, badGeo = 0, keptCount = 0, discardedCount = 0;
+
+  for (int i = 0; i < snap.docs.length; i++) {
+    final doc = snap.docs[i];
+    final d = doc.data();
+    log('Doc [${i + 1}/${snap.docs.length}]: id="${doc.id}"');
+    log('  name      : "${d['name']}"');
+    log('  status    : "${d['status']}"');
+    log('  network   : "${d['network']}"');
+    log('  power     : "${d['power']}"');
+    log('  connectors: ${d['connectorTypes']}');
+
+    final loc = d['location'];
+    if (loc is GeoPoint) {
+      validGeo++;
+      final lat = loc.latitude, lng = loc.longitude;
+      final dLat = (lat - uLat).abs() * 111.0;
+      final dLng = (lng - uLng).abs() * 111.0 * 0.85;
+      final dist = _auditSqrt(dLat * dLat + dLng * dLng);
+      final kept = dist <= radius;
+      if (kept) { keptCount++; } else { discardedCount++; }
+      log('  location  : GeoPoint($lat, $lng)');
+      log('  dist      : ~${dist.toStringAsFixed(2)} km from New Delhi fallback');
+      log('  20km-filt : ${kept ? "KEPT" : "DISCARDED (beyond radius)"}');
+    } else if (loc == null) {
+      badGeo++;
+      log('  location  : NULL — field MISSING from document!');
+    } else {
+      badGeo++;
+      log('  location  : WRONG TYPE: ${loc.runtimeType} (expected GeoPoint)');
+    }
+  }
+
+  // Step 4 — Summary
+  log('──────────────────────────────────────────────────────');
+  log('Total docs in Firestore    : ${snap.docs.length}');
+  log('Valid GeoPoint             : $validGeo');
+  log('Missing/bad location       : $badGeo');
+  log('Within 20km (kept)         : $keptCount');
+  log('Beyond 20km (discarded)    : $discardedCount');
+  log('debugShowAllChargers=true  : filter bypassed — all $validGeo should show');
+
+  // Step 5 — Diagnosis
+  log('──────────────────────────────────────────────────────');
+  if (snap.docs.isEmpty) {
+    log('DIAGNOSIS: Firestore empty — zero markers');
+  } else if (badGeo == snap.docs.length) {
+    log('DIAGNOSIS: ALL docs missing/bad location — zero markers parsed');
+  } else if (discardedCount == validGeo && validGeo > 0) {
+    log('DIAGNOSIS: All chargers beyond 20km. debugShowAllChargers=true should fix this.');
+    log('  If markers still missing, verify the flag is being read at runtime.');
+  } else if (validGeo > 0) {
+    log('DIAGNOSIS: $validGeo valid chargers found. They should appear on the map.');
+    log('  If not visible: check marker icon loading or GoogleMap widget.');
+  }
+  log('═══════════════════════════════════════════════════════');
+  log('  AUDIT COMPLETE');
+  log('═══════════════════════════════════════════════════════');
+}
+
+double _auditSqrt(double x) {
+  if (x <= 0) return 0;
+  double g = x / 2;
+  for (int i = 0; i < 20; i++) {
+    g = (g + x / g) / 2;
+  }
+  return g;
+}
+
