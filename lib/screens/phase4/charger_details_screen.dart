@@ -4,6 +4,7 @@ import 'package:hugeicons/hugeicons.dart';
 import '../../models/map_marker_model.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
+import '../../core/widgets/charger_source_badge.dart';
 import '../../services/places_service.dart';
 import '../../providers/charging_session_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -122,6 +123,12 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                         children: [
                           Row(
                             children: [
+                              ChargerSourceBadge(
+                                source: marker.source,
+                                isVerified: marker.isVerified,
+                                compact: false,
+                              ),
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
@@ -177,7 +184,7 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
-                                  marker.description,
+                                  '${marker.description}${marker.distanceKm != null ? ' • ${marker.distanceKm!.toStringAsFixed(1)} km away' : ''}',
                                   style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -235,7 +242,7 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                       
                       const SizedBox(height: 28),
 
-                      // Queue details
+                      // Live Station Availability
                       const Text(
                         'LIVE STATION AVAILABILITY',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
@@ -243,16 +250,33 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                       const SizedBox(height: 12),
                       GlassContainer(
                         padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildLiveStallStat('Occupied', '1', Colors.grey),
-                            Container(width: 1, height: 40, color: Colors.white10),
-                            _buildLiveStallStat('Available', '3', AppColors.secondary),
-                            Container(width: 1, height: 40, color: Colors.white10),
-                            _buildLiveStallStat('Active Queue', '0 min', AppColors.primary),
-                          ],
-                        ),
+                        child: marker.status == MarkerStatus.unknown || marker.availableStalls == 'Availability Unknown'
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.info_outline, color: AppColors.textSecondary, size: 18),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Live availability unavailable for this location',
+                                        style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  _buildLiveStallStat('Status', marker.status.name.toUpperCase(), AppColors.primary),
+                                  Container(width: 1, height: 40, color: Colors.white10),
+                                  _buildLiveStallStat('Stalls', marker.availableStalls, AppColors.secondary),
+                                  Container(width: 1, height: 40, color: Colors.white10),
+                                  _buildLiveStallStat('Updated', marker.lastUpdated ?? 'Live', Colors.white),
+                                ],
+                              ),
                       ),
 
                       const SizedBox(height: 28),

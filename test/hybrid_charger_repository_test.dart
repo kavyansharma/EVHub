@@ -70,9 +70,11 @@ void main() {
         longitude: 77.2177,
         type: MarkerType.station,
         source: 'google_places',
+        status: MarkerStatus.unknown,
       );
 
       expect(model.source, equals('google_places'));
+      expect(model.status, equals(MarkerStatus.unknown));
     });
   });
 

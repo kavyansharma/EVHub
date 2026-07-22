@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/map_marker_model.dart';
 import '../repositories/firestore_charger_repository.dart';
@@ -56,8 +57,9 @@ class MapsProvider extends ChangeNotifier {
   final Set<String> _selectedConnectors = {}; // 'CCS2', 'Type 2', 'CHAdeMO'
   final Set<String> _selectedSpeeds = {};      // 'Fast', 'Ultra Fast', 'AC'
   String? _selectedPriceType;                  // 'Free', 'Paid'
-  String? _selectedStatusFilter;               // 'Available', 'Busy'
+  String? _selectedStatusFilter;               // 'Available', 'Busy', 'Offline', 'Unknown'
   String? _selectedNetwork;                    // 'Tata Power', 'Statiq', etc.
+  String? _selectedSourceFilter;                 // 'EVHub Verified', 'Google Places'
 
   // ─── 30-second Auto-Refresh ───────────────────────────────────────────────
   Timer? _autoRefreshTimer;
@@ -96,6 +98,7 @@ class MapsProvider extends ChangeNotifier {
   String? get selectedPriceType => _selectedPriceType;
   String? get selectedStatusFilter => _selectedStatusFilter;
   String? get selectedNetwork => _selectedNetwork;
+  String? get selectedSourceFilter => _selectedSourceFilter;
 
   int get estimatedBatteryUsage {
     if (_routeDistance == null) return 0;
@@ -320,6 +323,10 @@ class MapsProvider extends ChangeNotifier {
   // ─── Live location update ─────────────────────────────────────────────────
   void updateLiveLocation(double lat, double lng) {
     _currentLocation = {'latitude': lat, 'longitude': lng};
+    _markers = _markers.map((m) {
+      final distMeters = Geolocator.distanceBetween(lat, lng, m.latitude, m.longitude);
+      return m.copyWith(distanceKm: distMeters / 1000.0);
+    }).toList();
     notifyListeners();
   }
 
@@ -357,12 +364,18 @@ class MapsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setSourceFilter(String? source) {
+    _selectedSourceFilter = _selectedSourceFilter == source ? null : source;
+    notifyListeners();
+  }
+
   void clearAllFilters() {
     _selectedConnectors.clear();
     _selectedSpeeds.clear();
     _selectedPriceType = null;
     _selectedStatusFilter = null;
     _selectedNetwork = null;
+    _selectedSourceFilter = null;
     notifyListeners();
   }
 
@@ -383,9 +396,15 @@ class MapsProvider extends ChangeNotifier {
       if (_selectedStatusFilter != null) {
         if (_selectedStatusFilter == 'Available' && m.status != MarkerStatus.available) return false;
         if (_selectedStatusFilter == 'Busy' && m.status != MarkerStatus.busy) return false;
+        if (_selectedStatusFilter == 'Offline' && m.status != MarkerStatus.offline) return false;
+        if (_selectedStatusFilter == 'Unknown' && m.status != MarkerStatus.unknown) return false;
       }
       if (_selectedNetwork != null) {
         if (!m.network.toLowerCase().contains(_selectedNetwork!.toLowerCase())) return false;
+      }
+      if (_selectedSourceFilter != null) {
+        if (_selectedSourceFilter == 'EVHub Verified' && m.source != 'evhub_verified') return false;
+        if (_selectedSourceFilter == 'Google Places' && m.source != 'google_places') return false;
       }
       return true;
     }).toList();

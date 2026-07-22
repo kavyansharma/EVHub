@@ -13,26 +13,29 @@ import '../../providers/charging_session_provider.dart';
 import '../../core/constants/map_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
+import '../../core/widgets/charger_source_badge.dart';
 import '../../models/map_marker_model.dart';
 import '../../services/maps_service.dart';
 import '../charging/live_charging_screen.dart';
 import 'charger_details_screen.dart';
 
 // Helper function to dynamically generate circular glow markers
-Future<BitmapDescriptor> createCustomMarker(Color color, bool isSelected) async {
+Future<BitmapDescriptor> createCustomMarker(Color color, bool isSelected, {bool isVerified = false}) async {
   final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
   final Canvas canvas = Canvas(pictureRecorder);
   final double radius = isSelected ? 30.0 : 22.0;
   
   // Paint shadow/glow
   final Paint shadowPaint = Paint()
-    ..color = color.withOpacity(isSelected ? 0.6 : 0.3)
+    ..color = isVerified 
+        ? const Color(0xFF10B981).withOpacity(isSelected ? 0.7 : 0.4)
+        : color.withOpacity(isSelected ? 0.6 : 0.3)
     ..maskFilter = const MaskFilter.blur(ui.BlurStyle.normal, 6);
   canvas.drawCircle(Offset(radius + 10, radius + 10), radius, shadowPaint);
 
-  // Paint border
+  // Outer border ring: Emerald/gold for verified, White for discovered
   final Paint borderPaint = Paint()
-    ..color = Colors.white
+    ..color = isVerified ? const Color(0xFF10B981) : Colors.white
     ..style = PaintingStyle.fill;
   canvas.drawCircle(Offset(radius + 10, radius + 10), radius, borderPaint);
 
@@ -79,6 +82,8 @@ class _MapsScreenState extends State<MapsScreen> {
   BitmapDescriptor? _markerAvailable;
   BitmapDescriptor? _markerBusy;
   BitmapDescriptor? _markerOffline;
+  BitmapDescriptor? _markerUnknown;
+  BitmapDescriptor? _markerVerifiedAvailable;
   BitmapDescriptor? _markerSelected;
   bool _markersLoaded = false;
 
@@ -122,6 +127,8 @@ class _MapsScreenState extends State<MapsScreen> {
       _markerAvailable = await createCustomMarker(const Color(0xFF10B981), false); // Green
       _markerBusy = await createCustomMarker(const Color(0xFFF59E0B), false);      // Orange
       _markerOffline = await createCustomMarker(const Color(0xFFEF4444), false);   // Red
+      _markerUnknown = await createCustomMarker(const Color(0xFF6B7280), false);   // Grey
+      _markerVerifiedAvailable = await createCustomMarker(const Color(0xFF10B981), false, isVerified: true);
       _markerSelected = await createCustomMarker(const Color(0xFF3B82F6), true);    // Blue
       if (mounted) {
         setState(() {
@@ -238,6 +245,8 @@ class _MapsScreenState extends State<MapsScreen> {
       if (_markersLoaded) {
         if (isSelected) {
           icon = _markerSelected!;
+        } else if (m.isVerified || m.source == 'evhub_verified') {
+          icon = _markerVerifiedAvailable ?? _markerAvailable!;
         } else {
           switch (m.status) {
             case MarkerStatus.available:
@@ -248,6 +257,9 @@ class _MapsScreenState extends State<MapsScreen> {
               break;
             case MarkerStatus.offline:
               icon = _markerOffline!;
+              break;
+            case MarkerStatus.unknown:
+              icon = _markerUnknown ?? _markerAvailable!;
               break;
           }
         }
@@ -506,6 +518,12 @@ class _MapsScreenState extends State<MapsScreen> {
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       children: [
+                        _buildFilterBadge('⭐ EVHub Verified', mapsProvider.selectedSourceFilter == 'EVHub Verified', () {
+                          mapsProvider.setSourceFilter('EVHub Verified');
+                        }),
+                        _buildFilterBadge('🌐 Google Places', mapsProvider.selectedSourceFilter == 'Google Places', () {
+                          mapsProvider.setSourceFilter('Google Places');
+                        }),
                         _buildFilterBadge('CCS2', mapsProvider.selectedConnectors.contains('CCS2'), () {
                           mapsProvider.toggleConnectorFilter('CCS2');
                         }),
@@ -745,6 +763,9 @@ class _MapsScreenState extends State<MapsScreen> {
     } else if (m.status == MarkerStatus.offline) {
       statusColor = Colors.grey;
       statusText = 'Offline';
+    } else if (m.status == MarkerStatus.unknown) {
+      statusColor = const Color(0xFF6B7280);
+      statusText = 'Unknown';
     }
 
     return DraggableScrollableSheet(
@@ -801,6 +822,31 @@ class _MapsScreenState extends State<MapsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Row(
+                            children: [
+                              ChargerSourceBadge(source: m.source, isVerified: m.isVerified, compact: true),
+                              if (m.distanceKm != null) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.06),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white10),
+                                  ),
+                                  child: Text(
+                                    '${m.distanceKm!.toStringAsFixed(1)} km away',
+                                    style: GoogleFonts.outfit(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                           Text(
                             m.title,
                             style: GoogleFonts.outfit(

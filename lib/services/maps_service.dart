@@ -212,19 +212,15 @@ class MapsService {
       network = 'ChargeZone';
     }
 
-    // Stable properties based on place ID hash
-    final hash = placeId.hashCode.abs();
-    final status = MarkerStatus.values[hash % MarkerStatus.values.length];
-    
-    final int stalls = 2 + (hash % 8);
-    final int occupied = status == MarkerStatus.busy ? stalls : (hash % stalls);
-    final String stallsText = '${stalls - occupied}/$stalls';
-
-    final double powerVal = (50 + (hash % 15) * 10).toDouble(); // 50kW to 190kW
-    final String power = '${powerVal.toInt()}kW';
-    final powerType = powerVal >= 100.0 ? 'Ultra Fast' : 'Fast';
-
-    final price = '₹${(15 + (hash % 12))}/kWh'; // ₹15 to ₹26
+    // Live real-time availability is unavailable from standard Google Places API
+    const status = MarkerStatus.unknown;
+    const availabilityStatus = 'Live availability unavailable';
+    const stallsText = 'Availability Unknown';
+    const power = 'Details Unavailable';
+    const powerType = 'Fast';
+    const price = 'Details Unavailable';
+    const connectorCount = 0;
+    const connectors = ['Details Unavailable'];
 
     String? photoUrl;
     final photos = place['photos'] as List<dynamic>?;
@@ -252,11 +248,14 @@ class MapsService {
       address: address,
       openStatus: openStatus,
       price: price,
-      connectorCount: stalls,
-      connectors: stalls > 4 ? ['CCS2', 'Type 2'] : ['CCS2'],
+      connectorCount: connectorCount,
+      connectors: connectors,
       powerType: powerType,
       openingHours: '24 Hours',
       source: 'google_places',
+      isVerified: false,
+      availabilityStatus: availabilityStatus,
+      placeId: placeId,
     );
   }
 

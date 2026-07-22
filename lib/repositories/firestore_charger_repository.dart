@@ -271,13 +271,32 @@ class FirestoreChargerRepository {
       final String price = (data['pricePerUnit'] as String?) ?? '₹21/kWh';
 
       // ── Status (string → enum) ────────────────────────────────────────────
-      final MarkerStatus status = _parseStatus(data['status'] as String?);
+      final String? rawStatus = data['status'] as String?;
+      final MarkerStatus status = _parseStatus(rawStatus);
 
       // ── Connector counts ─────────────────────────────────────────────────
-      final int totalConnectors = (data['totalConnectors'] as num?)?.toInt() ?? 4;
-      final int availableConnectors =
-          (data['availableConnectors'] as num?)?.toInt() ?? totalConnectors;
-      final String availableStalls = '$availableConnectors/$totalConnectors';
+      final int? rawTotal = (data['totalConnectors'] as num?)?.toInt();
+      final int? rawAvailable = (data['availableConnectors'] as num?)?.toInt();
+      final int totalConnectors = rawTotal ?? 4;
+      final int availableConnectors = rawAvailable ?? totalConnectors;
+
+      final String availableStalls = (rawStatus != null && rawTotal != null)
+          ? '$availableConnectors/$totalConnectors'
+          : 'Availability Unknown';
+
+      final String availabilityStatus = (rawStatus != null && rawTotal != null)
+          ? '$availableConnectors/$totalConnectors Available'
+          : 'Availability Unknown';
+
+      // ── Timestamp / lastUpdated ─────────────────────────────────────────
+      final dynamic rawUpdatedAt = data['updatedAt'] ?? data['lastUpdated'];
+      String? lastUpdated;
+      if (rawUpdatedAt is Timestamp) {
+        final dt = rawUpdatedAt.toDate();
+        lastUpdated = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      } else if (rawUpdatedAt is String) {
+        lastUpdated = rawUpdatedAt;
+      }
 
       // ── Image URL ─────────────────────────────────────────────────────────
       final String? imageUrl = data['imageUrl'] as String?;
@@ -322,6 +341,9 @@ class FirestoreChargerRepository {
         powerType: powerType,
         openingHours: '24 Hours',
         source: 'evhub_verified',
+        isVerified: true,
+        availabilityStatus: availabilityStatus,
+        lastUpdated: lastUpdated,
       );
     } catch (e) {
       debugPrint(
@@ -363,14 +385,19 @@ class FirestoreChargerRepository {
   /// Accepts: "available", "busy", "offline" (case-insensitive).
   /// Defaults to [MarkerStatus.available] for any unknown value.
   MarkerStatus _parseStatus(String? raw) {
-    switch (raw?.toLowerCase().trim()) {
+    if (raw == null || raw.trim().isEmpty) {
+      return MarkerStatus.unknown;
+    }
+    switch (raw.toLowerCase().trim()) {
       case 'busy':
         return MarkerStatus.busy;
       case 'offline':
         return MarkerStatus.offline;
       case 'available':
-      default:
         return MarkerStatus.available;
+      case 'unknown':
+      default:
+        return MarkerStatus.unknown;
     }
   }
 
@@ -383,6 +410,8 @@ class FirestoreChargerRepository {
         return 'offline';
       case MarkerStatus.available:
         return 'available';
+      case MarkerStatus.unknown:
+        return 'unknown';
     }
   }
 

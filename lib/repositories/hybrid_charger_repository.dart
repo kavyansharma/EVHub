@@ -107,7 +107,7 @@ class HybridChargerRepository {
     withDistance.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
 
     final List<MapMarkerModel> finalChargers =
-        withDistance.map((e) => e.charger).toList();
+        withDistance.map((e) => e.charger.copyWith(distanceKm: e.distanceKm)).toList();
 
     // 5. Debug Logging
     debugPrint('[HybridChargerRepository]');
