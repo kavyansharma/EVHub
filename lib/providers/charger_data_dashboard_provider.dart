@@ -193,7 +193,16 @@ class ChargerDataDashboardProvider extends ChangeNotifier {
 
     try {
       _chargers = await _firestoreRepository.getAllChargers();
-      debugPrint('[FIRESTORE-DIAGNOSTIC] Dashboard Loaded ${_chargers.length} chargers successfully.');
+      debugPrint('''
+[ADMIN-DASHBOARD-DIAGNOSTIC]
+Auth UID: ${currentUser.id}
+Email: ${currentUser.email}
+Firestore Profile: Loaded
+Role: ${currentUser.role.name}
+IsAdmin: ${currentUser.isAdmin}
+Dashboard Access: GRANTED
+Dashboard Data Count: ${_chargers.length}
+''');
     } catch (e) {
       debugPrint('[FIRESTORE-DIAGNOSTIC] ❌ Dashboard fetch error: $e');
       _errorMessage = 'Failed to load dashboard data: ${e.toString().replaceAll("Exception: ", "")}';

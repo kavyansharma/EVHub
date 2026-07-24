@@ -112,7 +112,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildBadgesSection(profileProvider.profile!.badges),
                   const SizedBox(height: 24),
 
-                  // 4. Settings Options List
+                  // 4. Admin Control Panel (Visible ONLY to Admin users)
+                  if (user?.isAdmin == true) _buildAdminSection(context),
+
+                  // 5. Settings Options List
                   const Text(
                     'CONTROL PANEL',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
@@ -345,6 +348,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 18),
         ],
       ),
+    );
+  }
+
+  Widget _buildAdminSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'ADMIN CONTROL PANEL',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.5,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        InkWell(
+          key: const Key('admin_dashboard_tile'),
+          onTap: () {
+            Navigator.pushNamed(context, AppRoutes.adminDashboard);
+          },
+          borderRadius: BorderRadius.circular(18),
+          child: GlassContainer(
+            padding: const EdgeInsets.all(16),
+            borderRadius: 18,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const HugeIcon(
+                    icon: HugeIcons.strokeRoundedSecurity,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Admin Dashboard',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'View charger operations, data quality, network coverage & alerts',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.primary, size: 18),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
     );
   }
 }

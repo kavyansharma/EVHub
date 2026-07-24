@@ -31,6 +31,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final dashboardProvider = context.read<ChargerDataDashboardProvider>();
       final adminChargerProvider = context.read<AdminChargerProvider>();
 
+      debugPrint('''
+[ADMIN-DASHBOARD-DIAGNOSTIC]
+Auth UID: ${currentUser.id}
+Email: ${currentUser.email}
+Firestore Profile: Loaded
+Role: ${currentUser.role.name}
+IsAdmin: ${currentUser.isAdmin}
+Dashboard Access: ${currentUser.isAdmin ? 'GRANTED' : 'DENIED'}
+''');
+
       if (currentUser.isAdmin) {
         dashboardProvider.refreshDashboard(currentUser: currentUser);
         adminChargerProvider.loadChargers(currentUser: currentUser);
@@ -291,7 +301,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             children: [
               HugeIcon(icon: icon, color: color, size: 18),
               const SizedBox(width: 8),
-              Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
+              Flexible(child: Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
             ],
           ),
         ),
@@ -393,13 +403,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Database Quality Score', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 2),
-                  Text('Evaluated across 8 required fields per charger', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Database Quality Score', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 2),
+                    Text('Evaluated across 8 required fields per charger', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                  ],
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -568,12 +580,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     children: [
                       const ChargerSourceBadge(source: 'evhub_verified', isVerified: true),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${summary.evhubVerifiedCount} chargers', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                          Text('${summary.evhubVerifiedPercentage.toStringAsFixed(1)}% of total', style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${summary.evhubVerifiedCount} chargers', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                            Text('${summary.evhubVerifiedPercentage.toStringAsFixed(1)}% of total', style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -592,12 +606,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     children: [
                       const ChargerSourceBadge(source: 'google_places', isVerified: false),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${summary.googlePlacesCount} chargers', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                          const Text('Live API Discoveries', style: TextStyle(color: AppColors.textSecondary, fontSize: 10)),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${summary.googlePlacesCount} chargers', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                            const Text('Live API Discoveries', style: TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+                          ],
+                        ),
                       ),
                     ],
                   ),

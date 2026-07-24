@@ -120,9 +120,11 @@ class UserModel {
     );
   }
 
-  static Role _roleFromString(String? str) {
-    if (str == null || str.trim().isEmpty) return Role.user;
-    final lower = str.trim().toLowerCase();
+  static Role _roleFromString(dynamic value) {
+    if (value == null) return Role.user;
+    final str = value.toString().trim();
+    if (str.isEmpty) return Role.user;
+    final lower = str.toLowerCase();
     if (lower == 'admin' || lower == 'role.admin') return Role.admin;
     if (lower == 'partner' || lower == 'role.partner') return Role.partner;
     if (lower == 'fleetmanager' || lower == 'role.fleetmanager') return Role.fleetManager;

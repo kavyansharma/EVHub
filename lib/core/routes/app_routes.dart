@@ -6,6 +6,7 @@ import '../../screens/auth/signup_screen.dart';
 import '../../screens/auth/forgot_password_screen.dart';
 import '../../screens/onboarding/vehicle_onboarding_screen.dart';
 import '../../screens/main_navigation_screen.dart';
+import '../../screens/admin/admin_dashboard_screen.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -17,6 +18,7 @@ class AppRoutes {
   static const String home = '/home';
   static const String admin = '/admin';
   static const String partner = '/partner';
+  static const String adminDashboard = '/admin_dashboard';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -37,6 +39,8 @@ class AppRoutes {
       case admin:
       case partner:
         return _buildFadeRoute(const MainNavigationScreen());
+      case adminDashboard:
+        return _buildFadeRoute(const AdminDashboardScreen());
       default:
         return MaterialPageRoute(
           builder: (_) => Scaffold(
