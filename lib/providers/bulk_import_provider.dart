@@ -10,6 +10,8 @@ import '../services/file_download_helper.dart';
 import '../services/nrel_charger_data_source.dart';
 import '../services/open_charge_map_charger_data_source.dart';
 
+import '../services/ocm_api_service.dart';
+
 enum BulkImportStep { idle, parsing, previewReady, importing, complete }
 
 enum ImportSourceMode { openChargeMapIndia, nrelApi, csvFile }
@@ -23,7 +25,7 @@ class BulkImportProvider extends ChangeNotifier {
     BulkChargerDataSource? nrelDataSource,
     BulkChargerDataSource? ocmDataSource,
   })  : _nrelDataSource = nrelDataSource ?? NrelChargerDataSource(),
-        _ocmDataSource = ocmDataSource ?? OpenChargeMapChargerDataSource();
+        _ocmDataSource = ocmDataSource ?? OcmApiService();
 
   BulkImportStep _step = BulkImportStep.idle;
   ImportSourceMode _sourceMode = ImportSourceMode.openChargeMapIndia;
@@ -180,7 +182,20 @@ class BulkImportProvider extends ChangeNotifier {
       final dataSource = customDataSource ?? _ocmDataSource;
       List<MapMarkerModel> fetched = [];
 
-      if (dataSource is OpenChargeMapChargerDataSource) {
+      if (dataSource is OcmApiService) {
+        final statsResult = await dataSource.fetchChargersWithStats(options: {
+          'apiKey': _customOcmApiKey.isNotEmpty ? _customOcmApiKey : null,
+          'limit': _ocmLimit,
+          'onProgress': (count, page) {
+            _progressCurrent = count;
+            notifyListeners();
+          },
+        });
+        fetched = statsResult.validChargers;
+        _totalApiRecords = statsResult.totalApiRecords;
+        _nonIndiaRejectedCount = statsResult.nonIndiaRejectedCount;
+        _invalidCoordCount = statsResult.invalidCoordCount;
+      } else if (dataSource is OpenChargeMapChargerDataSource) {
         final statsResult = await dataSource.fetchChargersWithStats(options: {
           'apiKey': _customOcmApiKey.isNotEmpty ? _customOcmApiKey : null,
           'limit': _ocmLimit,

@@ -91,6 +91,14 @@ service cloud.firestore {
       ) || request.time < timestamp.date(2026, 8, 14);
     }
 
+    // ─────────────────────────────────────────────────────────
+    // IMPORT JOBS COLLECTION (/import_jobs/{jobId})
+    // ─────────────────────────────────────────────────────────
+    match /import_jobs/{jobId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
     // Fallback rule for other collections (wallets, sessions, etc.)
     match /{document=**} {
       allow read, write: if isAuthenticated() || request.time < timestamp.date(2026, 8, 14);

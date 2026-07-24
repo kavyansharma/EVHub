@@ -183,6 +183,10 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
               _buildCompletionSummary(bulkProvider),
               const SizedBox(height: 24),
             ],
+
+            // Admin Job History Audit Log Section
+            _buildJobHistorySection(bulkProvider),
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -1151,5 +1155,99 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
     if (!item.isValid) return AppColors.danger;
     if (item.isDuplicate) return AppColors.warning;
     return AppColors.secondary;
+  }
+
+  Widget _buildJobHistorySection(BulkImportProvider bulkProvider) {
+    final jobs = bulkProvider.jobHistory;
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(20),
+      borderRadius: 20,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.history_rounded, color: AppColors.primary, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Admin Import Job Audit History',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (jobs.isEmpty)
+            const Text(
+              'No import or sync jobs executed in this session.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: jobs.length,
+              separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 16),
+              itemBuilder: (context, index) {
+                final job = jobs[index];
+                final bool isDry = job.isDryRun;
+
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.03),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: isDry ? AppColors.secondary.withOpacity(0.3) : AppColors.primary.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Job ID: ${job.jobId}',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isDry ? AppColors.secondary.withOpacity(0.2) : AppColors.primary.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              job.status.toUpperCase(),
+                              style: TextStyle(
+                                color: isDry ? AppColors.secondary : AppColors.primary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Started: ${job.startedAt.split("T").first} • Source: ${job.source}',
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Text('Created: ${job.createdCount}', style: const TextStyle(color: AppColors.secondary, fontSize: 11, fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 12),
+                          Text('Skipped: ${job.skippedCount}', style: const TextStyle(color: AppColors.warning, fontSize: 11, fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 12),
+                          Text('Errors: ${job.errorCount}', style: const TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
   }
 }

@@ -434,6 +434,35 @@ Kazam Hub,Kazam,Indiranagar,Bengaluru,Karnataka,India,12.9784,77.6408,4,4,60kW''
       expect(provider.jobHistory.first.isDryRun, isTrue);
       expect(provider.jobHistory.first.status, contains('dry_run'));
     });
+
+    test('TEST 28: Large-Scale Dataset Simulation (50, 500, 1000, 5000 records)', () {
+      final service = CsvImportService();
+
+      for (final size in [50, 500, 1000, 5000]) {
+        final List<MapMarkerModel> largeDataset = List.generate(size, (i) {
+          return MapMarkerModel(
+            id: 'ocm_${100000 + i}',
+            title: 'India Station #$i',
+            description: 'Street #$i',
+            latitude: 12.0 + (i % 200) * 0.01,
+            longitude: 77.0 + (i % 200) * 0.01,
+            type: MarkerType.station,
+            network: i % 2 == 0 ? 'Tata Power' : 'Statiq',
+            source: 'bulk_import',
+            isVerified: false,
+          );
+        });
+
+        final results = service.processFetchedChargers(
+          fetchedChargers: largeDataset,
+          existingFirestoreChargers: [],
+        );
+
+        expect(results.length, equals(size));
+        final validCount = results.where((r) => r.isValid && !r.isDuplicate).length;
+        expect(validCount, greaterThan(0));
+      }
+    });
   });
 }
 

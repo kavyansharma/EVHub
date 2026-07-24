@@ -1,0 +1,15 @@
+{
+  "name": "evhub-functions",
+  "description": "Firebase Cloud Functions for EVHub Admin & Bulk Charger Operations",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^11.8.0",
+    "firebase-functions": "^4.3.1",
+    "axios": "^1.4.0"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "private": true
+}
