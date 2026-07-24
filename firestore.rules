@@ -3,17 +3,21 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // Safe helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    function userExists() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return userExists() ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data : {};
     }
 
     function hasRole(role) {
-      return isAuthenticated() && getUserData().role == role;
+      return userExists() && getUserData().role == role;
     }
 
     function isAdmin() {
@@ -28,13 +32,13 @@ service cloud.firestore {
     // USERS COLLECTION (/users/{uid})
     // ─────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Anyone authenticated can read profiles (or their own)
+      // Anyone authenticated can read user profiles
       allow read: if isAuthenticated();
 
-      // Users can create/update their own profile, but CANNOT elevate their role to admin
-      allow create: if isAuthenticated() && request.auth.uid == userId 
-        && (!request.resource.data.keys().hasAll(['role']) || request.resource.data.role == 'user');
+      // Users can create their own profile document
+      allow create: if isAuthenticated() && request.auth.uid == userId;
 
+      // Users can update their own profile (or admin can update any)
       allow update: if isAdmin() || (
         isAuthenticated() && request.auth.uid == userId
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || resource.data.role == request.resource.data.role)
@@ -48,13 +52,12 @@ service cloud.firestore {
     // ─────────────────────────────────────────────────────────
     match /chargers/{chargerId} {
       // READ RULES:
-      // • Anyone can read verified & approved public chargers
-      // • Partners can read public chargers OR chargers they own
-      // • Admins can read all chargers
-      allow read: if resource.data.isVerified == true 
-        || (isAuthenticated() && resource.data.ownerId == request.auth.uid)
-        || isAdmin()
-        || request.time < timestamp.date(2026, 8, 14); // Fallback window for initial development setup
+      // • Authenticated users can read all chargers
+      // • Public/Unauthenticated can read verified & approved chargers
+      // • Fallback timestamp for dev
+      allow read: if isAuthenticated()
+        || resource.data.isVerified == true 
+        || request.time < timestamp.date(2026, 8, 14);
 
       // CREATE RULES:
       // • Admin can create any charger with verified status
@@ -90,3 +93,4 @@ service cloud.firestore {
     }
   }
 }
+

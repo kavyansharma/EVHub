@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/map_marker_model.dart';
 
@@ -43,11 +44,13 @@ class FirestoreChargerRepository {
   ///
   /// Returns an empty list if the collection is empty or if an error occurs.
   Future<List<MapMarkerModel>> getAllChargers() async {
-    debugPrint('[FirestoreChargerRepository] ── getAllChargers() START ──');
+    final currentAuthUser = FirebaseAuth.instance.currentUser;
     debugPrint(
-      '[FirestoreChargerRepository] Fetching from collection="$_collection" '
-      'in Firestore project: ${_firestore.app.options.projectId}',
+      '[FirestoreChargerRepository] ── getAllChargers() START ──\n'
+      '   Auth State: ${currentAuthUser != null ? "Logged In (uid=${currentAuthUser.uid}, isAnon=${currentAuthUser.isAnonymous})" : "Unauthenticated"}\n'
+      '   Fetching collection="$_collection" in Firestore project: ${_firestore.app.options.projectId}',
     );
+
     try {
       final snapshot = await _firestore.collection(_collection).get();
 

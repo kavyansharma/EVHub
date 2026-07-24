@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
@@ -52,9 +53,14 @@ class AuthRepositoryImpl implements AuthRepository {
       password,
     );
     final fbUser = credential.user!;
+    debugPrint('[AuthRepository] Auth successful for uid="${fbUser.uid}", email="${fbUser.email}"');
+
     UserModel? user = await _userRepository.getUserDocument(fbUser.uid);
 
-    if (user == null) {
+    if (user != null) {
+      debugPrint('[AuthRepository] Firestore user profile loaded: uid="${user.id}", role="${user.role.name}", isAdmin=${user.isAdmin}');
+    } else {
+      debugPrint('[AuthRepository] ⚠ No Firestore user profile found for uid="${fbUser.uid}". Creating default user profile...');
       user = UserModel(
         id: fbUser.uid,
         email: fbUser.email ?? email,
@@ -115,7 +121,12 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<UserModel?> restoreSession() async {
     final fbUser = _authService.currentUser;
-    if (fbUser == null) return null;
+    if (fbUser == null) {
+      debugPrint('[AuthRepository] restoreSession: No active Firebase Auth user.');
+      return null;
+    }
+
+    debugPrint('[AuthRepository] restoreSession: Found Firebase Auth user uid="${fbUser.uid}", isAnonymous=${fbUser.isAnonymous}');
 
     if (fbUser.isAnonymous) {
       return UserModel.guest();
@@ -123,9 +134,12 @@ class AuthRepositoryImpl implements AuthRepository {
 
     // Try to fetch profile from Firestore.
     final saved = await _userRepository.getUserDocument(fbUser.uid);
-    if (saved != null) return saved;
+    if (saved != null) {
+      debugPrint('[AuthRepository] restoreSession: Loaded profile for uid="${saved.id}", role="${saved.role.name}", isAdmin=${saved.isAdmin}');
+      return saved;
+    }
 
-    // Fallback to Firebase Auth data.
+    debugPrint('[AuthRepository] ⚠ restoreSession: Firestore doc missing for uid="${fbUser.uid}". Using default fallback user model.');
     return UserModel(
       id: fbUser.uid,
       email: fbUser.email ?? '',

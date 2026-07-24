@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/constants/app_constants.dart';
 import '../models/user_model.dart';
@@ -21,6 +22,7 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> createUserDocument(UserModel user) async {
+    debugPrint('[UserRepository] Creating /users/${user.id} profile (role=${user.role.name})...');
     await _usersCol.doc(user.id).set(user.toFirestore(), SetOptions(merge: true));
 
     // Also create a wallet document if it doesn't exist yet.
@@ -39,14 +41,29 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> updateUserDocument(String uid, Map<String, dynamic> data) async {
+    debugPrint('[UserRepository] Updating /users/$uid with $data');
     await _usersCol.doc(uid).update(data);
   }
 
   @override
   Future<UserModel?> getUserDocument(String uid) async {
-    final snap = await _usersCol.doc(uid).get();
-    if (!snap.exists) return null;
-    return UserModel.fromFirestore(snap);
+    debugPrint('[UserRepository] Fetching /users/$uid document from Firestore...');
+    try {
+      final snap = await _usersCol.doc(uid).get();
+      if (!snap.exists) {
+        debugPrint('[UserRepository] ⚠ Document /users/$uid DOES NOT EXIST in Firestore.');
+        return null;
+      }
+      final user = UserModel.fromFirestore(snap);
+      debugPrint('[UserRepository] ✓ Loaded /users/$uid: name="${user.name}", role="${user.role.name}", isAdmin=${user.isAdmin}');
+      return user;
+    } on FirebaseException catch (e) {
+      debugPrint('[UserRepository] ❌ FirebaseException fetching /users/$uid: code=${e.code}, message=${e.message}');
+      return null;
+    } catch (e) {
+      debugPrint('[UserRepository] ❌ Error fetching /users/$uid: $e');
+      return null;
+    }
   }
 
   @override
@@ -57,3 +74,4 @@ class UserRepositoryImpl implements UserRepository {
     });
   }
 }
+
