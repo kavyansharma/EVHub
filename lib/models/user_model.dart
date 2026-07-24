@@ -121,9 +121,11 @@ class UserModel {
   }
 
   static Role _roleFromString(String? str) {
-    if (str == 'admin') return Role.admin;
-    if (str == 'partner') return Role.partner;
-    if (str == 'fleetManager') return Role.fleetManager;
+    if (str == null || str.trim().isEmpty) return Role.user;
+    final lower = str.trim().toLowerCase();
+    if (lower == 'admin' || lower == 'role.admin') return Role.admin;
+    if (lower == 'partner' || lower == 'role.partner') return Role.partner;
+    if (lower == 'fleetmanager' || lower == 'role.fleetmanager') return Role.fleetManager;
     return Role.user;
   }
 }

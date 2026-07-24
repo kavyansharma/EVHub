@@ -69,10 +69,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: const [
                 Icon(Icons.gpp_bad_rounded, color: AppColors.danger, size: 48),
                 SizedBox(height: 16),
-                Text('Access Denied', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text('Admin Profile Error', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                 SizedBox(height: 8),
                 Text(
-                  'The Charger Data Operations Dashboard is restricted to authorized EVHub Administrators.',
+                  'Authentication successful, but your EVHub admin profile could not be loaded.\nPlease contact the administrator.',
                   style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),

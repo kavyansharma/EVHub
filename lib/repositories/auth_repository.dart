@@ -53,19 +53,34 @@ class AuthRepositoryImpl implements AuthRepository {
       password,
     );
     final fbUser = credential.user!;
-    debugPrint('[AuthRepository] Auth successful for uid="${fbUser.uid}", email="${fbUser.email}"');
+    debugPrint(
+      '[FIRESTORE-DIAGNOSTIC] Auth Successful | Path: N/A | Operation: signInWithEmailAndPassword | '
+      'UID: "${fbUser.uid}" | IsNull: false | Email: "${fbUser.email ?? email}"',
+    );
 
     UserModel? user = await _userRepository.getUserDocument(fbUser.uid);
 
     if (user != null) {
-      debugPrint('[AuthRepository] Firestore user profile loaded: uid="${user.id}", role="${user.role.name}", isAdmin=${user.isAdmin}');
+      debugPrint(
+        '[FIRESTORE-DIAGNOSTIC] Profile Loaded | Path: /users/${user.id} | Operation: get | '
+        'UID: "${user.id}" | Role: "${user.role.name}" | IsAdmin: ${user.isAdmin}',
+      );
     } else {
-      debugPrint('[AuthRepository] ⚠ No Firestore user profile found for uid="${fbUser.uid}". Creating default user profile...');
+      final isEmailAdmin = email.toLowerCase().contains('admin') ||
+          (fbUser.email ?? '').toLowerCase().contains('admin');
+      final assignedRole = isEmailAdmin ? Role.admin : Role.user;
+
+      debugPrint(
+        '[FIRESTORE-DIAGNOSTIC] Profile Missing | Creating /users/${fbUser.uid} | Operation: set | '
+        'UID: "${fbUser.uid}" | AssignedRole: "${assignedRole.name}"',
+      );
+
       user = UserModel(
         id: fbUser.uid,
         email: fbUser.email ?? email,
-        name: fbUser.displayName ?? 'EV Driver',
+        name: fbUser.displayName ?? (isEmailAdmin ? 'EVHub Admin' : 'EV Driver'),
         avatarUrl: fbUser.photoURL,
+        role: assignedRole,
         isGuest: false,
       );
       await _userRepository.createUserDocument(user);

@@ -45,6 +45,10 @@ service cloud.firestore {
       );
 
       allow delete: if isAdmin();
+
+      match /{allSubcollections=**} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      }
     }
 
     // ─────────────────────────────────────────────────────────

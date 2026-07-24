@@ -175,8 +175,13 @@ class ChargerDataDashboardProvider extends ChangeNotifier {
 
   /// Initial load and manual refresh
   Future<void> refreshDashboard({required UserModel currentUser}) async {
+    debugPrint(
+      '[FIRESTORE-DIAGNOSTIC] Refresh Dashboard Requested | UID: "${currentUser.id}" | '
+      'Role: "${currentUser.role.name}" | IsAdmin: ${currentUser.isAdmin}',
+    );
+
     if (!currentUser.isAdmin) {
-      _errorMessage = 'Access Restricted: Admin role required.';
+      _errorMessage = 'Authentication successful, but your EVHub admin profile could not be loaded. Please contact the administrator.';
       _chargers = [];
       notifyListeners();
       return;
@@ -188,7 +193,9 @@ class ChargerDataDashboardProvider extends ChangeNotifier {
 
     try {
       _chargers = await _firestoreRepository.getAllChargers();
+      debugPrint('[FIRESTORE-DIAGNOSTIC] Dashboard Loaded ${_chargers.length} chargers successfully.');
     } catch (e) {
+      debugPrint('[FIRESTORE-DIAGNOSTIC] ❌ Dashboard fetch error: $e');
       _errorMessage = 'Failed to load dashboard data: ${e.toString().replaceAll("Exception: ", "")}';
     } finally {
       _isLoading = false;

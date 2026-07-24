@@ -278,7 +278,7 @@ void main() {
 
     test('21. Non-admin access restriction', () async {
       await provider.refreshDashboard(currentUser: normalUser);
-      expect(provider.errorMessage, contains('Access Restricted'));
+      expect(provider.errorMessage, contains('admin profile could not be loaded'));
       expect(provider.chargers, isEmpty);
     });
   });
