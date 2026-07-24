@@ -61,8 +61,19 @@ class MapsProvider extends ChangeNotifier {
   String? _selectedNetwork;                    // 'Tata Power', 'Statiq', etc.
   String? _selectedSourceFilter;                 // 'EVHub Verified', 'Google Places'
 
-  // ─── 30-second Auto-Refresh ───────────────────────────────────────────────
+  // Phase 8 Multi-Combinable Filters
+  bool _filterAvailableNow = false;
+  bool _filterEVHubVerified = false;
+  bool _filterFastCharging = false;
+  bool _filterUltraFast = false;
+  bool _filterOpenNow = false;
+  double? _maxPriceFilter;
+  double? _maxRadiusFilter;
+
+  // ─── Real-time Streams ───────────────────────────────────────────────────
   Timer? _autoRefreshTimer;
+  StreamSubscription<Position>? _positionStreamSub;
+  StreamSubscription<List<MapMarkerModel>>? _firestoreStreamSub;
 
   MapsProvider({
     required MapsRepository mapsRepository,
@@ -100,6 +111,14 @@ class MapsProvider extends ChangeNotifier {
   String? get selectedNetwork => _selectedNetwork;
   String? get selectedSourceFilter => _selectedSourceFilter;
 
+  bool get filterAvailableNow => _filterAvailableNow;
+  bool get filterEVHubVerified => _filterEVHubVerified;
+  bool get filterFastCharging => _filterFastCharging;
+  bool get filterUltraFast => _filterUltraFast;
+  bool get filterOpenNow => _filterOpenNow;
+  double? get maxPriceFilter => _maxPriceFilter;
+  double? get maxRadiusFilter => _maxRadiusFilter;
+
   int get estimatedBatteryUsage {
     if (_routeDistance == null) return 0;
     try {
@@ -116,6 +135,48 @@ class MapsProvider extends ChangeNotifier {
     }
   }
 
+  // ─── Real-Time Stream Initialization ─────────────────────────────────────
+  void startRealtimeStreams() {
+    // 1. Live GPS tracking stream
+    _positionStreamSub?.cancel();
+    _positionStreamSub = _mapsService.getPositionStream().listen((pos) {
+      updateLiveLocation(pos.latitude, pos.longitude);
+    }, onError: (e) {
+      debugPrint('[MapsProvider] GPS stream error: $e');
+    });
+
+    // 2. Real-time Firestore chargers stream
+    _firestoreStreamSub?.cancel();
+    _firestoreStreamSub = _firestoreChargerRepository.streamPublicVerifiedChargers().listen((verifiedChargers) {
+      debugPrint('[MapsProvider] Real-time Firestore update: ${verifiedChargers.length} verified chargers');
+      _updateFirestoreMarkersInList(verifiedChargers);
+    }, onError: (e) {
+      debugPrint('[MapsProvider] Firestore stream error: $e');
+    });
+  }
+
+  void _updateFirestoreMarkersInList(List<MapMarkerModel> verifiedChargers) {
+    if (_markers.isEmpty) {
+      _markers = verifiedChargers;
+      notifyListeners();
+      return;
+    }
+
+    final Map<String, MapMarkerModel> markerMap = {for (var m in _markers) m.id: m};
+    for (final v in verifiedChargers) {
+      markerMap[v.id] = v;
+    }
+
+    _markers = markerMap.values.toList();
+    if (_currentLocation != null) {
+      final lat = _currentLocation!['latitude']!;
+      final lng = _currentLocation!['longitude']!;
+      updateLiveLocation(lat, lng);
+    } else {
+      notifyListeners();
+    }
+  }
+
   // ─── Start auto-refresh timer ─────────────────────────────────────────────
   void startAutoRefresh() {
     _autoRefreshTimer?.cancel();
@@ -123,18 +184,21 @@ class MapsProvider extends ChangeNotifier {
       debugPrint('[MapsProvider] Auto-refresh: fetching updated charger list');
       await refreshStations();
     });
-    debugPrint('[MapsProvider] Auto-refresh timer started (30s interval)');
+    startRealtimeStreams();
   }
 
   void stopAutoRefresh() {
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = null;
-    debugPrint('[MapsProvider] Auto-refresh timer stopped');
+    _positionStreamSub?.cancel();
+    _firestoreStreamSub?.cancel();
+    _positionStreamSub = null;
+    _firestoreStreamSub = null;
   }
 
   @override
   void dispose() {
-    _autoRefreshTimer?.cancel();
+    stopAutoRefresh();
     super.dispose();
   }
 
@@ -152,7 +216,6 @@ class MapsProvider extends ChangeNotifier {
       final errMsg = e.toString();
       debugPrint('[MapsProvider] GPS error: $errMsg');
 
-      // Surface a human-readable error for the UI
       if (errMsg.contains('disabled')) {
         _locationError = 'Location services are disabled. Please enable GPS to find chargers near you.';
       } else if (errMsg.contains('permanently denied')) {
@@ -163,20 +226,16 @@ class MapsProvider extends ChangeNotifier {
         _locationError = 'Could not determine your location. Showing chargers near New Delhi.';
       }
 
-      // Fallback to New Delhi Connaught Place
       _currentLocation = {
         'latitude': 28.6304,
         'longitude': 77.2177,
       };
     }
 
-    // Always load stations (even on GPS failure, use fallback coords)
     await refreshStations();
-
     _isLoading = false;
     notifyListeners();
 
-    // Start the 30-second auto-refresh
     startAutoRefresh();
   }
 
@@ -196,7 +255,6 @@ class MapsProvider extends ChangeNotifier {
 
       final userLat = _currentLocation!['latitude']!;
       final userLng = _currentLocation!['longitude']!;
-      debugPrint('[MapsProvider] User GPS: lat=$userLat, lng=$userLng');
 
       final chargers = await _hybridChargerRepository.getHybridChargers(
         latitude: userLat,
@@ -205,17 +263,11 @@ class MapsProvider extends ChangeNotifier {
       );
 
       _markers = chargers;
-
-      debugPrint('[MapsProvider]');
-      debugPrint('Displaying ${_markers.length} chargers');
-
       notifyListeners();
     } catch (e) {
       debugPrint('[MapsProvider] Error refreshing stations: $e');
     }
   }
-
-
 
   // ─── Search Autocomplete ──────────────────────────────────────────────────
   Future<void> searchSuggestions(String query) async {
@@ -268,13 +320,11 @@ class MapsProvider extends ChangeNotifier {
 
     try {
       final origin = LatLng(_currentLocation!['latitude']!, _currentLocation!['longitude']!);
-      debugPrint('[MapsProvider] Calculating route from $origin to $dest');
       final directions = await _mapsService.getDirections(origin, dest);
       if (directions != null) {
         _routePoints = directions['points'] as List<LatLng>;
         _routeDistance = directions['distance'] as String;
         _routeDuration = directions['duration'] as String;
-        debugPrint('[MapsProvider] Route: $_routeDistance, ETA: $_routeDuration, points: ${_routePoints.length}');
       }
     } catch (e) {
       debugPrint('[MapsProvider] Route error: $e');
@@ -311,7 +361,6 @@ class MapsProvider extends ChangeNotifier {
         _selectedMarker!.latitude,
         _selectedMarker!.longitude,
       );
-      debugPrint('[MapsProvider] ${_nearbyPlaces.length} nearby places loaded');
     } catch (e) {
       debugPrint('[MapsProvider] Error fetching nearby places: $e');
     } finally {
@@ -330,7 +379,43 @@ class MapsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── Filters ─────────────────────────────────────────────────────────────
+  // ─── Phase 8 Multi-Combinable Filter Toggles ─────────────────────────────
+  void toggleFilterAvailableNow() {
+    _filterAvailableNow = !_filterAvailableNow;
+    notifyListeners();
+  }
+
+  void toggleFilterEVHubVerified() {
+    _filterEVHubVerified = !_filterEVHubVerified;
+    notifyListeners();
+  }
+
+  void toggleFilterFastCharging() {
+    _filterFastCharging = !_filterFastCharging;
+    notifyListeners();
+  }
+
+  void toggleFilterUltraFast() {
+    _filterUltraFast = !_filterUltraFast;
+    notifyListeners();
+  }
+
+  void toggleFilterOpenNow() {
+    _filterOpenNow = !_filterOpenNow;
+    notifyListeners();
+  }
+
+  void setMaxPriceFilter(double? price) {
+    _maxPriceFilter = price;
+    notifyListeners();
+  }
+
+  void setMaxRadiusFilter(double? radius) {
+    _maxRadiusFilter = radius;
+    notifyListeners();
+  }
+
+  // ─── Legacy Filters ──────────────────────────────────────────────────────
   void toggleConnectorFilter(String connector) {
     if (_selectedConnectors.contains(connector)) {
       _selectedConnectors.remove(connector);
@@ -376,36 +461,95 @@ class MapsProvider extends ChangeNotifier {
     _selectedStatusFilter = null;
     _selectedNetwork = null;
     _selectedSourceFilter = null;
+    _filterAvailableNow = false;
+    _filterEVHubVerified = false;
+    _filterFastCharging = false;
+    _filterUltraFast = false;
+    _filterOpenNow = false;
+    _maxPriceFilter = null;
+    _maxRadiusFilter = null;
     notifyListeners();
   }
 
-  // ─── Filtered markers ─────────────────────────────────────────────────────
+  // ─── Multi-Combinable Filtered Markers Generator ────────────────────────
   List<MapMarkerModel> getFilteredMarkers() {
     return _markers.where((m) {
+      // 1. Available Now
+      if (_filterAvailableNow) {
+        if (m.computedStatus != MarkerStatus.available || m.availableConnectorsCount <= 0) {
+          return false;
+        }
+      }
+
+      // 2. EVHub Verified
+      if (_filterEVHubVerified) {
+        if (m.source != 'evhub_verified' || !m.isVerified) return false;
+      }
+
+      // 3. Fast Charging
+      if (_filterFastCharging) {
+        final powerKw = double.tryParse(m.power.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+        if (powerKw < 22.0 || powerKw >= 100.0) return false;
+      }
+
+      // 4. Ultra Fast
+      if (_filterUltraFast) {
+        final powerKw = double.tryParse(m.power.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+        if (powerKw < 100.0) return false;
+      }
+
+      // 5. Open Now
+      if (_filterOpenNow) {
+        if (m.openStatus?.toLowerCase() != 'open') return false;
+      }
+
+      // 6. Max Price
+      if (_maxPriceFilter != null) {
+        final priceVal = double.tryParse(m.price?.replaceAll(RegExp(r'[^0-9.]'), '') ?? '') ?? 0.0;
+        if (priceVal > _maxPriceFilter!) return false;
+      }
+
+      // 7. Max Radius
+      if (_maxRadiusFilter != null && m.distanceKm != null) {
+        if (m.distanceKm! > _maxRadiusFilter!) return false;
+      }
+
+      // 8. Connectors
       if (_selectedConnectors.isNotEmpty) {
         if (!m.connectors.any((c) => _selectedConnectors.contains(c))) return false;
       }
+
+      // 9. Speeds
       if (_selectedSpeeds.isNotEmpty) {
         if (!_selectedSpeeds.contains(m.powerType)) return false;
       }
+
+      // 10. Price Type
       if (_selectedPriceType != null) {
         final isFree = m.price?.toLowerCase().contains('free') ?? false;
         if (_selectedPriceType == 'Free' && !isFree) return false;
         if (_selectedPriceType == 'Paid' && isFree) return false;
       }
+
+      // 11. Status Filter
       if (_selectedStatusFilter != null) {
-        if (_selectedStatusFilter == 'Available' && m.status != MarkerStatus.available) return false;
-        if (_selectedStatusFilter == 'Busy' && m.status != MarkerStatus.busy) return false;
-        if (_selectedStatusFilter == 'Offline' && m.status != MarkerStatus.offline) return false;
-        if (_selectedStatusFilter == 'Unknown' && m.status != MarkerStatus.unknown) return false;
+        if (_selectedStatusFilter == 'Available' && m.computedStatus != MarkerStatus.available) return false;
+        if (_selectedStatusFilter == 'Busy' && m.computedStatus != MarkerStatus.busy) return false;
+        if (_selectedStatusFilter == 'Offline' && m.computedStatus != MarkerStatus.offline) return false;
+        if (_selectedStatusFilter == 'Unknown' && m.computedStatus != MarkerStatus.unknown) return false;
       }
+
+      // 12. Network Filter
       if (_selectedNetwork != null) {
         if (!m.network.toLowerCase().contains(_selectedNetwork!.toLowerCase())) return false;
       }
+
+      // 13. Source Filter
       if (_selectedSourceFilter != null) {
         if (_selectedSourceFilter == 'EVHub Verified' && m.source != 'evhub_verified') return false;
         if (_selectedSourceFilter == 'Google Places' && m.source != 'google_places') return false;
       }
+
       return true;
     }).toList();
   }

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 import '../core/theme/app_colors.dart';
 import '../core/widgets/glass_container.dart';
+import '../models/user_model.dart';
+import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'phase4/maps_screen.dart';
@@ -12,6 +14,7 @@ import 'phase4/wallet_2_screen.dart';
 import 'garage/garage_screen.dart';
 import 'ai/ai_assistant_screen.dart';
 import 'phase4/profile_screen.dart';
+import 'admin/admin_dashboard_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -24,38 +27,51 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
   bool _isExpanded = false;
 
-  final List<Widget> _screens = [
-    const DashboardScreen(),     // 0. Dashboard
-    const MapsScreen(),          // 1. Maps
-    const RoutePlannerScreen(),  // 2. Trips
-    const LiveChargingScreen(),  // 3. Charging
-    const Wallet2Screen(),        // 4. Wallet
-    const GarageScreen(),         // 5. Garage
-    const AIAssistantScreen(),   // 6. AI Assistant
-    const ProfileScreen(),        // 7. Settings / Profile
-  ];
-
-  final List<Map<String, dynamic>> _navItems = [
-    {'title': 'Dashboard', 'icon': HugeIcons.strokeRoundedGrid02},
-    {'title': 'Maps', 'icon': HugeIcons.strokeRoundedMapsLocation01},
-    {'title': 'Trips', 'icon': HugeIcons.strokeRoundedRoute01},
-    {'title': 'Charging', 'icon': HugeIcons.strokeRoundedFlash},
-    {'title': 'Wallet', 'icon': HugeIcons.strokeRoundedWallet02},
-    {'title': 'Garage', 'icon': HugeIcons.strokeRoundedCar02},
-    {'title': 'AI Assistant', 'icon': HugeIcons.strokeRoundedAiChat01},
-    {'title': 'Settings', 'icon': HugeIcons.strokeRoundedSettings01},
-  ];
-
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    final authProvider = context.watch<AuthProvider>();
+    final currentUser = authProvider.user ?? UserModel.guest();
     final brandColor = themeProvider.currentBrandColor;
+
+    // Dynamically construct nav items based on user role
+    final List<Widget> screens = [
+      const DashboardScreen(),     // 0. Dashboard
+      const MapsScreen(),          // 1. Maps
+      const RoutePlannerScreen(),  // 2. Trips
+      const LiveChargingScreen(),  // 3. Charging
+      const Wallet2Screen(),        // 4. Wallet
+      const GarageScreen(),         // 5. Garage
+      const AIAssistantScreen(),   // 6. AI Assistant
+      const ProfileScreen(),        // 7. Settings / Profile
+    ];
+
+    final List<Map<String, dynamic>> navItems = [
+      {'title': 'Dashboard', 'icon': HugeIcons.strokeRoundedGrid02},
+      {'title': 'Maps', 'icon': HugeIcons.strokeRoundedMapsLocation01},
+      {'title': 'Trips', 'icon': HugeIcons.strokeRoundedRoute01},
+      {'title': 'Charging', 'icon': HugeIcons.strokeRoundedFlash},
+      {'title': 'Wallet', 'icon': HugeIcons.strokeRoundedWallet02},
+      {'title': 'Garage', 'icon': HugeIcons.strokeRoundedCar02},
+      {'title': 'AI Assistant', 'icon': HugeIcons.strokeRoundedAiChat01},
+      {'title': 'Settings', 'icon': HugeIcons.strokeRoundedSettings01},
+    ];
+
+    if (currentUser.canManageChargers) {
+      screens.add(const AdminDashboardScreen());
+      navItems.add({
+        'title': currentUser.isAdmin ? 'Admin Portal' : 'Partner Portal',
+        'icon': currentUser.isAdmin ? HugeIcons.strokeRoundedSecurity : HugeIcons.strokeRoundedStore01,
+      });
+    }
+
+    final safeIndex = _currentIndex >= screens.length ? 0 : _currentIndex;
 
     return Scaffold(
       body: Row(
         children: [
           // Custom Expandable Left Floating Navigation Rail
-          _buildFloatingSidebar(brandColor),
+          _buildFloatingSidebar(brandColor, navItems, safeIndex),
           
           // Main screen viewport
           Expanded(
@@ -74,8 +90,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 );
               },
               child: KeyedSubtree(
-                key: ValueKey<int>(_currentIndex),
-                child: _screens[_currentIndex],
+                key: ValueKey<int>(safeIndex),
+                child: screens[safeIndex],
               ),
             ),
           ),
@@ -84,7 +100,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  Widget _buildFloatingSidebar(Color brandColor) {
+  Widget _buildFloatingSidebar(Color brandColor, List<Map<String, dynamic>> navItems, int activeIndex) {
     return SafeArea(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
@@ -139,10 +155,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               // Navigation Items List
               Expanded(
                 child: ListView.builder(
-                  itemCount: _navItems.length,
+                  itemCount: navItems.length,
                   itemBuilder: (context, index) {
-                    final item = _navItems[index];
-                    final isSelected = _currentIndex == index;
+                    final item = navItems[index];
+                    final isSelected = activeIndex == index;
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4.0),
                       child: InkWell(

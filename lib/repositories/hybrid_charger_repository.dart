@@ -30,9 +30,9 @@ class HybridChargerRepository {
     List<MapMarkerModel> firebaseChargers = [];
     bool firebaseFailed = false;
 
-    // 1. Fetch Firebase Verified Chargers
+    // 1. Fetch Firebase Verified Chargers (Only approved & verified chargers)
     try {
-      firebaseChargers = await _firestoreRepository.getAllChargers();
+      firebaseChargers = await _firestoreRepository.getPublicVerifiedChargers();
       firebaseChargers = firebaseChargers
           .map((c) => _ensureSource(c, 'evhub_verified'))
           .toList();

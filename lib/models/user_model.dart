@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum Role { user, admin, fleetManager }
+enum Role { user, partner, admin, fleetManager }
 
 class UserModel {
   final String id;
@@ -9,7 +9,9 @@ class UserModel {
   final String? avatarUrl;
   final bool isGuest;
   final double walletBalance;
-  final Role role; // Phase 5 Module 14: Super Admin Role
+  final Role role; // Role-based access: user, partner, admin, fleetManager
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const UserModel({
     required this.id,
@@ -19,7 +21,14 @@ class UserModel {
     this.isGuest = false,
     this.walletBalance = 0.0,
     this.role = Role.user,
+    this.createdAt,
+    this.updatedAt,
   });
+
+  bool get isAdmin => role == Role.admin;
+  bool get isPartner => role == Role.partner;
+  bool get isUser => role == Role.user;
+  bool get canManageChargers => isAdmin || isPartner;
 
   UserModel copyWith({
     String? id,
@@ -29,6 +38,8 @@ class UserModel {
     bool? isGuest,
     double? walletBalance,
     Role? role,
+    DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -38,6 +49,8 @@ class UserModel {
       isGuest: isGuest ?? this.isGuest,
       walletBalance: walletBalance ?? this.walletBalance,
       role: role ?? this.role,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -68,18 +81,20 @@ class UserModel {
   /// Firestore serialization — stores user profile in /users/{uid}
   Map<String, dynamic> toFirestore() {
     return {
+      'uid': id,
       'email': email,
       'name': name,
       'avatarUrl': avatarUrl,
       'isGuest': isGuest,
       'role': role.name,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     };
   }
 
   /// Deserialize from a Firestore document snapshot.
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
     return UserModel(
       id: doc.id,
       email: data['email'] ?? '',
@@ -88,6 +103,8 @@ class UserModel {
       isGuest: (data['isGuest'] ?? false) as bool,
       walletBalance: (data['walletBalance'] ?? 0.0).toDouble(),
       role: _roleFromString(data['role']),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -105,7 +122,9 @@ class UserModel {
 
   static Role _roleFromString(String? str) {
     if (str == 'admin') return Role.admin;
+    if (str == 'partner') return Role.partner;
     if (str == 'fleetManager') return Role.fleetManager;
     return Role.user;
   }
 }
+

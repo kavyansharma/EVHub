@@ -78,6 +78,9 @@ import 'providers/ecosystem_provider.dart';
 import 'providers/maintenance_provider.dart';
 import 'providers/route_analytics_provider.dart';
 import 'providers/admin_provider.dart';
+import 'providers/admin_charger_provider.dart';
+import 'providers/bulk_import_provider.dart';
+import 'providers/charger_data_dashboard_provider.dart';
 
 void main() async {
   // Ensure Flutter engine bindings are ready before initialization
@@ -291,6 +294,20 @@ void main() async {
           create: (_) => AdminProvider(
             repository: adminRepository,
             service: adminService,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AdminChargerProvider(
+            firestoreRepository: firestoreChargerRepository,
+            userRepository: userRepository,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => BulkImportProvider(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ChargerDataDashboardProvider(
+            firestoreRepository: firestoreChargerRepository,
           ),
         ),
       ],

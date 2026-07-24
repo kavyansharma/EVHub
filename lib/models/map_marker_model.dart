@@ -34,6 +34,44 @@ class MapMarkerModel {
   final bool isVerified;
   final String? placeId;
 
+  // Phase 7.3 Admin Charger Management Enhancements
+  final String? ownerId;
+  final String? createdBy;
+  final String verificationStatus; // 'pending', 'approved', 'rejected'
+  final String? verifiedBy;
+  final String? verifiedAt;
+  final String? phoneNumber;
+  final String? website;
+  final String? city;
+  final String? state;
+  final String? country;
+  final List<String>? amenities;
+  final dynamic createdAt;
+  final dynamic updatedAt;
+
+  // Phase 8 Computed Helpers
+  int get availableConnectorsCount {
+    if (source == 'google_places' || !isVerified) return 0;
+    final parts = availableStalls.split('/');
+    if (parts.isNotEmpty) {
+      return int.tryParse(parts[0].trim()) ?? 0;
+    }
+    return 0;
+  }
+
+  int get occupiedConnectorsCount {
+    final total = connectorCount;
+    final avail = availableConnectorsCount;
+    return (total - avail).clamp(0, total);
+  }
+
+  MarkerStatus get computedStatus {
+    if (status == MarkerStatus.offline) return MarkerStatus.offline;
+    if (source == 'google_places' || !isVerified) return MarkerStatus.unknown;
+    if (availableConnectorsCount > 0) return MarkerStatus.available;
+    return MarkerStatus.busy;
+  }
+
   const MapMarkerModel({
     required this.id,
     required this.title,
@@ -61,6 +99,19 @@ class MapMarkerModel {
     this.lastUpdated,
     this.isVerified = true,
     this.placeId,
+    this.ownerId,
+    this.createdBy,
+    this.verificationStatus = 'approved',
+    this.verifiedBy,
+    this.verifiedAt,
+    this.phoneNumber,
+    this.website,
+    this.city,
+    this.state,
+    this.country,
+    this.amenities,
+    this.createdAt,
+    this.updatedAt,
   });
 
   MapMarkerModel copyWith({
@@ -90,6 +141,19 @@ class MapMarkerModel {
     String? lastUpdated,
     bool? isVerified,
     String? placeId,
+    String? ownerId,
+    String? createdBy,
+    String? verificationStatus,
+    String? verifiedBy,
+    String? verifiedAt,
+    String? phoneNumber,
+    String? website,
+    String? city,
+    String? state,
+    String? country,
+    List<String>? amenities,
+    dynamic createdAt,
+    dynamic updatedAt,
   }) {
     return MapMarkerModel(
       id: id ?? this.id,
@@ -118,6 +182,20 @@ class MapMarkerModel {
       lastUpdated: lastUpdated ?? this.lastUpdated,
       isVerified: isVerified ?? this.isVerified,
       placeId: placeId ?? this.placeId,
+      ownerId: ownerId ?? this.ownerId,
+      createdBy: createdBy ?? this.createdBy,
+      verificationStatus: verificationStatus ?? this.verificationStatus,
+      verifiedBy: verifiedBy ?? this.verifiedBy,
+      verifiedAt: verifiedAt ?? this.verifiedAt,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      website: website ?? this.website,
+      city: city ?? this.city,
+      state: state ?? this.state,
+      country: country ?? this.country,
+      amenities: amenities ?? this.amenities,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }
+

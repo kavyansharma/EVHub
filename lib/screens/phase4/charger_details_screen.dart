@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
@@ -5,10 +6,10 @@ import '../../models/map_marker_model.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../core/widgets/charger_source_badge.dart';
+import '../../core/utils/smart_charging_calculator.dart';
 import '../../services/places_service.dart';
-import '../../providers/charging_session_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../charging/live_charging_screen.dart';
+import '../../providers/garage_provider.dart';
+import '../charging/charge_here_confirmation_sheet.dart';
 
 class ChargerDetailsScreen extends StatefulWidget {
   final MapMarkerModel marker;
@@ -25,6 +26,10 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
   bool _isLoadingPlaces = true;
   String _activeTab = 'all';
   late TabController _tabController;
+
+  // Smart Charging Calculator State
+  double _currentPct = 25.0;
+  double _targetPct = 80.0;
 
   @override
   void initState() {
@@ -70,11 +75,36 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
     return AppColors.accent;
   }
 
+  void _showChargeHereModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => ChargeHereConfirmationSheet(charger: widget.marker),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final marker = widget.marker;
     final netColor = _getNetworkColor(marker.network);
-    final sessionProvider = context.watch<ChargingSessionProvider>();
+    final garageProvider = context.watch<GarageProvider>();
+
+    final vehicle = garageProvider.selectedVehicle ??
+        (garageProvider.vehicles.isNotEmpty ? garageProvider.vehicles.first : null);
+
+    final double chargerPowerKw = double.tryParse(marker.power.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 60.0;
+    final double pricePerKwh = SmartChargingCalculator.parsePrice(marker.price);
+
+    final calcResult = SmartChargingCalculator.calculate(
+      currentBatteryPct: _currentPct,
+      targetBatteryPct: _targetPct,
+      chargerPowerKw: chargerPowerKw,
+      vehicleMaxPowerKw: vehicle?.maxDcChargingSpeed ?? 120.0,
+      batteryCapacityKwh: vehicle?.batteryCapacity ?? 50.0,
+      pricePerKwh: pricePerKwh,
+      powerType: marker.powerType,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -184,7 +214,7 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
-                                  '${marker.description}${marker.distanceKm != null ? ' • ${marker.distanceKm!.toStringAsFixed(1)} km away' : ''}',
+                                  '${marker.address ?? marker.description}${marker.distanceKm != null ? ' • ${marker.distanceKm!.toStringAsFixed(1)} km away' : ''}',
                                   style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -212,7 +242,12 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: _buildMetricCard('STALLS', marker.availableStalls, HugeIcons.strokeRoundedFuelStation, AppColors.secondary),
+                            child: _buildMetricCard(
+                              'STALLS',
+                              marker.source == 'google_places' ? 'Unknown' : '${marker.availableConnectorsCount}/${marker.connectorCount}',
+                              HugeIcons.strokeRoundedFuelStation,
+                              AppColors.secondary,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -222,35 +257,32 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                       ),
                       const SizedBox(height: 28),
 
-                      // Connector Grid
+                      // Visual Connector Availability Section
                       const Text(
-                        'CONNECTOR SPECIFICATIONS',
+                        'CONNECTOR AVAILABILITY BREAKDOWN',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
                       ),
                       const SizedBox(height: 12),
                       Column(
                         children: marker.connectors.map((connector) {
-                          final isCCS2 = connector.toUpperCase().contains('CCS2');
-                          final label = isCCS2 ? '$connector (DC Fast)' : '$connector (AC SmartCharge)';
-                          final desc = isCCS2 ? '${marker.power} SuperSpeed' : '22 kW SmartCharge';
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12.0),
-                            child: _buildConnectorRow(label, desc, marker.price ?? '₹21/kWh', true),
+                            child: _buildVisualConnectorCard(connector, marker),
                           );
                         }).toList(),
                       ),
-                      
+
                       const SizedBox(height: 28),
 
-                      // Live Station Availability
+                      // Live Station Availability & Relative Update Time
                       const Text(
-                        'LIVE STATION AVAILABILITY',
+                        'LIVE STATION INTELLIGENCE',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
                       ),
                       const SizedBox(height: 12),
                       GlassContainer(
                         padding: const EdgeInsets.all(16),
-                        child: marker.status == MarkerStatus.unknown || marker.availableStalls == 'Availability Unknown'
+                        child: marker.source == 'google_places' || !marker.isVerified
                             ? const Center(
                                 child: Padding(
                                   padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -260,7 +292,7 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                                       Icon(Icons.info_outline, color: AppColors.textSecondary, size: 18),
                                       SizedBox(width: 8),
                                       Text(
-                                        'Live availability unavailable for this location',
+                                        'Live availability unavailable',
                                         style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.bold),
                                       ),
                                     ],
@@ -270,13 +302,108 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                             : Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                                 children: [
-                                  _buildLiveStallStat('Status', marker.status.name.toUpperCase(), AppColors.primary),
+                                  _buildLiveStallStat('Status', marker.computedStatus.name.toUpperCase(), _getStatusColor(marker.computedStatus)),
                                   Container(width: 1, height: 40, color: Colors.white10),
-                                  _buildLiveStallStat('Stalls', marker.availableStalls, AppColors.secondary),
+                                  _buildLiveStallStat('Available', '${marker.availableConnectorsCount}/${marker.connectorCount}', AppColors.secondary),
                                   Container(width: 1, height: 40, color: Colors.white10),
-                                  _buildLiveStallStat('Updated', marker.lastUpdated ?? 'Live', Colors.white),
+                                  _buildLiveStallStat('Occupied', '${marker.occupiedConnectorsCount}', AppColors.warning),
+                                  Container(width: 1, height: 40, color: Colors.white10),
+                                  _buildLiveStallStat('Updated', marker.lastUpdated ?? '12 sec ago', Colors.white),
                                 ],
                               ),
+                      ),
+
+                      const SizedBox(height: 28),
+
+                      // Embedded Smart Charging Calculator
+                      const Text(
+                        'SMART CHARGING CALCULATOR',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white),
+                      ),
+                      const SizedBox(height: 12),
+                      GlassContainer(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Battery Target: ${_currentPct.toInt()}% ➔ ${_targetPct.toInt()}%',
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.secondary.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Efficiency: ${calcResult.efficiencyPercentage}%',
+                                    style: const TextStyle(color: AppColors.secondary, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Slider(
+                                    value: _currentPct,
+                                    min: 5.0,
+                                    max: 90.0,
+                                    divisions: 17,
+                                    activeColor: AppColors.primary,
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _currentPct = val;
+                                        if (_targetPct <= _currentPct) {
+                                          _targetPct = math.min(100.0, _currentPct + 10.0);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Slider(
+                                    value: _targetPct,
+                                    min: _currentPct + 5.0,
+                                    max: 100.0,
+                                    divisions: 19,
+                                    activeColor: AppColors.secondary,
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _targetPct = val;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _buildCalcMetric('Grid Energy', '${calcResult.grossEnergyFromGridKwh.toStringAsFixed(1)} kWh'),
+                                Container(width: 1, height: 30, color: Colors.white10),
+                                _buildCalcMetric('Est. Time', calcResult.formattedTime),
+                                Container(width: 1, height: 30, color: Colors.white10),
+                                _buildCalcMetric('Est. Cost', '₹${calcResult.estimatedCost.toInt()}'),
+                                Container(width: 1, height: 30, color: Colors.white10),
+                                _buildCalcMetric('Range Added', '+${calcResult.estimatedRangeAddedKm.toInt()} km'),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            const Center(
+                              child: Text(
+                                '* Estimates based on standard charging curves.',
+                                style: TextStyle(color: AppColors.textSecondary, fontSize: 10, fontStyle: FontStyle.italic),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
 
                       const SizedBox(height: 28),
@@ -358,7 +485,6 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                   // Navigate Circle Button
                   GestureDetector(
                     onTap: () {
-                      // Trigger navigation UI or toast
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Starting GPS navigation layout...')),
                       );
@@ -381,66 +507,47 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Book Slot
+
+                  // Main Action Button ("Charge Here" for EVHub Verified, "View Details" for Google Places)
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Slot booked at ${marker.title}!'),
-                            backgroundColor: AppColors.secondary,
-                          ),
-                        );
+                        if (marker.source == 'evhub_verified' && marker.isVerified) {
+                          _showChargeHereModal(context);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Live availability unavailable for Google Places chargers.')),
+                          );
+                        }
                       },
                       child: Container(
                         height: 56,
                         decoration: BoxDecoration(
-                          color: AppColors.card,
+                          gradient: marker.source == 'evhub_verified' && marker.isVerified
+                              ? AppColors.chargingGradient
+                              : const LinearGradient(colors: [Color(0xFF374151), Color(0xFF1F2937)]),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white10),
+                          boxShadow: marker.source == 'evhub_verified' && marker.isVerified
+                              ? AppColors.neonShadow(color: AppColors.primary, blurRadius: 15)
+                              : [],
                         ),
-                        child: const Center(
-                          child: Text(
-                            'Book Slot',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Start Charging
-                  Expanded(
-                    flex: 2,
-                    child: GestureDetector(
-                      onTap: () {
-                        final auth = context.read<AuthProvider>();
-                        sessionProvider.startSession(
-                          auth.user?.id ?? 'default_user',
-                          marker.id,
-                          'ccs2_1',
-                        );
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (_) => const LiveChargingScreen()),
-                        );
-                      },
-                      child: Container(
-                        height: 56,
-                        decoration: BoxDecoration(
-                          gradient: AppColors.chargingGradient,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: AppColors.neonShadow(color: AppColors.primary, blurRadius: 15),
-                        ),
-                        child: const Center(
+                        child: Center(
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.flash_on, color: Colors.black, size: 20),
-                              SizedBox(width: 8),
+                              Icon(
+                                marker.source == 'evhub_verified' && marker.isVerified ? Icons.flash_on : Icons.info_outline,
+                                color: marker.source == 'evhub_verified' && marker.isVerified ? Colors.black : Colors.white,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
                               Text(
-                                'Charge Now',
-                                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
+                                marker.source == 'evhub_verified' && marker.isVerified ? 'Charge Here' : 'View Details',
+                                style: TextStyle(
+                                  color: marker.source == 'evhub_verified' && marker.isVerified ? Colors.black : Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
                               ),
                             ],
                           ),
@@ -454,6 +561,94 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
           ),
         ],
       ),
+    );
+  }
+
+  Color _getStatusColor(MarkerStatus status) {
+    switch (status) {
+      case MarkerStatus.available:
+        return const Color(0xFF00FF9C);
+      case MarkerStatus.busy:
+        return const Color(0xFFFFC247);
+      case MarkerStatus.offline:
+        return const Color(0xFFFF4D67);
+      case MarkerStatus.unknown:
+        return const Color(0xFF8F9CAE);
+    }
+  }
+
+  Widget _buildVisualConnectorCard(String connector, MapMarkerModel marker) {
+    final bool isUnknown = marker.source == 'google_places' || !marker.isVerified;
+    final int avail = isUnknown ? 0 : marker.availableConnectorsCount;
+    final int total = marker.connectorCount > 0 ? marker.connectorCount : 2;
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 18,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: (isUnknown ? Colors.grey : AppColors.secondary).withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: HugeIcon(
+              icon: HugeIcons.strokeRoundedPlug01,
+              color: isUnknown ? Colors.grey : AppColors.secondary,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$connector (${marker.powerType})',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 6),
+                // Visual Dots Row
+                Row(
+                  children: List.generate(total, (idx) {
+                    final isAvail = !isUnknown && idx < avail;
+                    return Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: isUnknown
+                            ? Colors.grey
+                            : (isAvail ? AppColors.secondary : AppColors.warning),
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            isUnknown ? 'Not Available' : '$avail / $total Available',
+            style: TextStyle(
+              color: isUnknown ? AppColors.textSecondary : (avail > 0 ? AppColors.secondary : AppColors.warning),
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalcMetric(String label, String value) {
+    return Column(
+      children: [
+        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+      ],
     );
   }
 
@@ -481,61 +676,9 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
         children: [
           HugeIcon(icon: icon, color: color, size: 24),
           const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
           const SizedBox(height: 2),
           Text(title, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConnectorRow(String type, String power, String price, bool isAvailable) {
-    return GlassContainer(
-      padding: const EdgeInsets.all(16),
-      borderRadius: 18,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: (isAvailable ? AppColors.secondary : Colors.grey).withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: HugeIcon(
-              icon: HugeIcons.strokeRoundedPlug01,
-              color: isAvailable ? AppColors.secondary : Colors.grey,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(type, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
-                const SizedBox(height: 4),
-                Text('$power • $price', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: (isAvailable ? AppColors.secondary : AppColors.danger).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: (isAvailable ? AppColors.secondary : AppColors.danger).withOpacity(0.3),
-              ),
-            ),
-            child: Text(
-              isAvailable ? 'AVAILABLE' : 'IN USE',
-              style: TextStyle(
-                color: isAvailable ? AppColors.secondary : AppColors.danger,
-                fontWeight: 'AVAILABLE'.contains('AVAIL') ? FontWeight.bold : FontWeight.normal,
-                fontSize: 10,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -544,9 +687,9 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
   Widget _buildLiveStallStat(String label, String value, Color color) {
     return Column(
       children: [
-        Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+        Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
       ],
     );
   }
@@ -568,7 +711,6 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
 
     return Column(
       children: [
-        // Tab indicator filters
         Row(
           children: [
             _buildAmenityTab('all', 'All'),
@@ -578,7 +720,6 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
           ],
         ),
         const SizedBox(height: 12),
-        // Filtered places slider
         SizedBox(
           height: 170,
           child: ListView.builder(
@@ -654,7 +795,6 @@ class _ChargerDetailsScreenState extends State<ChargerDetailsScreen> with Single
                         ],
                       ),
                       const SizedBox(height: 6),
-                      // Navigate Button
                       GestureDetector(
                         onTap: () {
                           ScaffoldMessenger.of(context).showSnackBar(

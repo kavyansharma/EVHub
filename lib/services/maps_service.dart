@@ -171,6 +171,30 @@ class MapsService {
     };
   }
 
+  // 5. Reverse Geocoding — LatLng to formatted address
+  Future<String> getAddressFromCoordinates(double lat, double lng) async {
+    final queryParams = {
+      'latlng': '$lat,$lng',
+      'key': _apiKey,
+    };
+    final url = _buildUri('/maps/api/geocode/json', queryParams);
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final results = data['results'] as List<dynamic>?;
+        if (results != null && results.isNotEmpty) {
+          return results[0]['formatted_address'] as String;
+        }
+      }
+    } catch (e) {
+      debugPrint("Reverse Geocoding error: $e");
+    }
+
+    return 'Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}';
+  }
+
   Stream<Position> getPositionStream() {
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(

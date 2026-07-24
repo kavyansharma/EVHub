@@ -52,16 +52,18 @@ class AuthRepositoryImpl implements AuthRepository {
       password,
     );
     final fbUser = credential.user!;
-    final user = UserModel(
-      id: fbUser.uid,
-      email: fbUser.email ?? email,
-      name: fbUser.displayName ?? 'EV Driver',
-      avatarUrl: fbUser.photoURL,
-      isGuest: false,
-    );
+    UserModel? user = await _userRepository.getUserDocument(fbUser.uid);
 
-    // Ensure Firestore profile exists.
-    await _userRepository.createUserDocument(user);
+    if (user == null) {
+      user = UserModel(
+        id: fbUser.uid,
+        email: fbUser.email ?? email,
+        name: fbUser.displayName ?? 'EV Driver',
+        avatarUrl: fbUser.photoURL,
+        isGuest: false,
+      );
+      await _userRepository.createUserDocument(user);
+    }
 
     // Remember Me — store email only.
     await _storageService.setRememberMe(rememberMe);

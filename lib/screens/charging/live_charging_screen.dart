@@ -5,6 +5,8 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../providers/charging_session_provider.dart';
 import '../../providers/garage_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/wallet_provider.dart';
 import 'dart:math' as math;
 
 class LiveChargingScreen extends StatefulWidget {
@@ -368,11 +370,69 @@ class _LiveChargingScreenState extends State<LiveChargingScreen> with TickerProv
                         ),
                       ),
                       const SizedBox(width: 16),
+                      const SizedBox(width: 16),
                       // Stop Button
                       Expanded(
                         child: GestureDetector(
-                          onTap: () {
+                          onTap: () async {
+                            final session = sessionProvider.activeSession;
+                            final cost = session?.currentCost ?? 0.0;
+                            final units = session?.unitsConsumed ?? 0.0;
+
                             sessionProvider.stopSession();
+
+                            final authProvider = context.read<AuthProvider>();
+                            final walletProvider = context.read<WalletProvider>();
+                            final uid = authProvider.user?.id ?? 'default_user';
+
+                            if (cost > 0) {
+                              await walletProvider.deduct(
+                                uid,
+                                cost,
+                                'EV Charging Session - ${units.toStringAsFixed(1)} kWh',
+                              );
+                            }
+
+                            if (context.mounted) {
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  backgroundColor: AppColors.card,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                  title: const Row(
+                                    children: [
+                                      Icon(Icons.check_circle, color: AppColors.secondary, size: 24),
+                                      SizedBox(width: 10),
+                                      Text('Session Completed', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Energy Added: ${units.toStringAsFixed(1)} kWh', style: const TextStyle(color: Colors.white, fontSize: 14)),
+                                      const SizedBox(height: 6),
+                                      Text('Total Cost Deducted: ₹${cost.toStringAsFixed(0)}', style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 14)),
+                                      const SizedBox(height: 6),
+                                      const Text('Wallet Balance Updated.', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                                    ],
+                                  ),
+                                  actions: [
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.primary,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pop(ctx);
+                                        Navigator.pop(context);
+                                      },
+                                      child: const Text('Done', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
                           },
                           child: Container(
                             height: 56,

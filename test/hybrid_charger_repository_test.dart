@@ -15,7 +15,8 @@ class MockFirestoreChargerRepository implements FirestoreChargerRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) {
-    if (invocation.memberName == #getAllChargers) {
+    if (invocation.memberName == #getAllChargers ||
+        invocation.memberName == #getPublicVerifiedChargers) {
       if (shouldThrow) {
         throw Exception('Firestore connection failed');
       }

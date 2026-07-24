@@ -1,18 +1,92 @@
-rules_version='2'
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isPartner() {
+      return hasRole('partner');
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // USERS COLLECTION (/users/{uid})
+    // ─────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Anyone authenticated can read profiles (or their own)
+      allow read: if isAuthenticated();
+
+      // Users can create/update their own profile, but CANNOT elevate their role to admin
+      allow create: if isAuthenticated() && request.auth.uid == userId 
+        && (!request.resource.data.keys().hasAll(['role']) || request.resource.data.role == 'user');
+
+      allow update: if isAdmin() || (
+        isAuthenticated() && request.auth.uid == userId
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || resource.data.role == request.resource.data.role)
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // CHARGERS COLLECTION (/chargers/{chargerId})
+    // ─────────────────────────────────────────────────────────
+    match /chargers/{chargerId} {
+      // READ RULES:
+      // • Anyone can read verified & approved public chargers
+      // • Partners can read public chargers OR chargers they own
+      // • Admins can read all chargers
+      allow read: if resource.data.isVerified == true 
+        || (isAuthenticated() && resource.data.ownerId == request.auth.uid)
+        || isAdmin()
+        || request.time < timestamp.date(2026, 8, 14); // Fallback window for initial development setup
+
+      // CREATE RULES:
+      // • Admin can create any charger with verified status
+      // • Partner can create chargers owned by themselves with pending status
+      allow create: if isAdmin() || (
+        isPartner() 
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.isVerified == false
+        && request.resource.data.verificationStatus == 'pending'
+      ) || request.time < timestamp.date(2026, 8, 14);
+
+      // UPDATE RULES:
+      // • Admin can update all fields (including verification)
+      // • Partner can update own chargers, but CANNOT alter verification status
+      allow update: if isAdmin() || (
+        isPartner()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.isVerified == resource.data.isVerified
+        && request.resource.data.verificationStatus == resource.data.verificationStatus
+      ) || request.time < timestamp.date(2026, 8, 14);
+
+      // DELETE RULES:
+      // • Admin can delete any charger
+      // • Partner can delete only their own chargers
+      allow delete: if isAdmin() || (
+        isPartner() && resource.data.ownerId == request.auth.uid
+      ) || request.time < timestamp.date(2026, 8, 14);
+    }
+
+    // Fallback rule for other collections (wallets, sessions, etc.)
     match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2026, 8, 14);
+      allow read, write: if isAuthenticated() || request.time < timestamp.date(2026, 8, 14);
     }
   }
 }

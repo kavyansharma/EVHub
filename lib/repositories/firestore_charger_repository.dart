@@ -223,58 +223,179 @@ class FirestoreChargerRepository {
   }
 
   // ───────────────────────────────────────────────────────────
+  // READ: getPublicVerifiedChargers
+  // ───────────────────────────────────────────────────────────
+
+  /// Fetches only EVHub Verified & Approved chargers for public discovery.
+  Future<List<MapMarkerModel>> getPublicVerifiedChargers() async {
+    try {
+      final snapshot = await _firestore.collection(_collection).get();
+      if (snapshot.docs.isEmpty) return [];
+
+      return snapshot.docs
+          .map((doc) => _documentToModel(doc.id, doc.data()))
+          .whereType<MapMarkerModel>()
+          .where((c) => c.isVerified && c.verificationStatus == 'approved')
+          .toList();
+    } catch (e) {
+      debugPrint('[FirestoreChargerRepository] Error in getPublicVerifiedChargers: $e');
+      return [];
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // READ: getChargersByOwner
+  // ───────────────────────────────────────────────────────────
+
+  /// Fetches all chargers owned by a specific partner UID.
+  Future<List<MapMarkerModel>> getChargersByOwner(String ownerId) async {
+    try {
+      final snapshot = await _firestore
+          .collection(_collection)
+          .where('ownerId', isEqualTo: ownerId)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => _documentToModel(doc.id, doc.data()))
+          .whereType<MapMarkerModel>()
+          .toList();
+    } catch (e) {
+      debugPrint('[FirestoreChargerRepository] Error in getChargersByOwner($ownerId): $e');
+      return [];
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // READ: getPendingChargers
+  // ───────────────────────────────────────────────────────────
+
+  /// Fetches all chargers pending admin review/verification.
+  Future<List<MapMarkerModel>> getPendingChargers() async {
+    try {
+      final snapshot = await _firestore
+          .collection(_collection)
+          .where('verificationStatus', isEqualTo: 'pending')
+          .get();
+
+      return snapshot.docs
+          .map((doc) => _documentToModel(doc.id, doc.data()))
+          .whereType<MapMarkerModel>()
+          .toList();
+    } catch (e) {
+      debugPrint('[FirestoreChargerRepository] Error in getPendingChargers: $e');
+      return [];
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // STREAMS: Real-time update streams
+  // ───────────────────────────────────────────────────────────
+
+  /// Stream of all chargers in Firestore
+  Stream<List<MapMarkerModel>> streamAllChargers() {
+    return _firestore.collection(_collection).snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => _documentToModel(doc.id, doc.data()))
+          .whereType<MapMarkerModel>()
+          .toList();
+    });
+  }
+
+  /// Stream of approved EVHub Verified chargers for public discovery
+  Stream<List<MapMarkerModel>> streamPublicVerifiedChargers() {
+    return _firestore.collection(_collection).snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => _documentToModel(doc.id, doc.data()))
+          .whereType<MapMarkerModel>()
+          .where((c) => c.isVerified && c.verificationStatus == 'approved')
+          .toList();
+    });
+  }
+
+  /// Stream of chargers owned by a specific partner
+  Stream<List<MapMarkerModel>> streamChargersByOwner(String ownerId) {
+    return _firestore
+        .collection(_collection)
+        .where('ownerId', isEqualTo: ownerId)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => _documentToModel(doc.id, doc.data()))
+          .whereType<MapMarkerModel>()
+          .toList();
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // VERIFICATION: Approve / Reject
+  // ───────────────────────────────────────────────────────────
+
+  /// Approves a partner-submitted charger. Sets isVerified = true.
+  Future<void> approveCharger(String id, String adminUid) async {
+    debugPrint('[FirestoreChargerRepository] Approving charger: $id by Admin: $adminUid');
+    try {
+      await _firestore.collection(_collection).doc(id).update({
+        'isVerified': true,
+        'verificationStatus': 'approved',
+        'verifiedBy': adminUid,
+        'verifiedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      debugPrint('[FirestoreChargerRepository] Charger approved: $id');
+    } catch (e) {
+      debugPrint('[FirestoreChargerRepository] Error approving charger $id: $e');
+      rethrow;
+    }
+  }
+
+  /// Rejects a partner-submitted charger. Keeps record, sets isVerified = false.
+  Future<void> rejectCharger(String id, String adminUid) async {
+    debugPrint('[FirestoreChargerRepository] Rejecting charger: $id by Admin: $adminUid');
+    try {
+      await _firestore.collection(_collection).doc(id).update({
+        'isVerified': false,
+        'verificationStatus': 'rejected',
+        'verifiedBy': adminUid,
+        'verifiedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      debugPrint('[FirestoreChargerRepository] Charger rejected: $id');
+    } catch (e) {
+      debugPrint('[FirestoreChargerRepository] Error rejecting charger $id: $e');
+      rethrow;
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────
   // PRIVATE: Firestore Document → MapMarkerModel
   // ───────────────────────────────────────────────────────────
 
   /// Converts a raw Firestore document map to a [MapMarkerModel].
-  ///
-  /// Every field access is null-safe and falls back to a sensible default,
-  /// so missing fields never cause a crash.
   MapMarkerModel? _documentToModel(String docId, Map<String, dynamic> data) {
     try {
-      // ── ID ──────────────────────────────────────────────────────────────
-      // Prefer the stored 'id' field; fall back to the Firestore document ID.
       final String id = (data['id'] as String?)?.trim().isNotEmpty == true
           ? data['id'] as String
           : docId;
 
-      // ── Name / title ─────────────────────────────────────────────────────
       final String name = (data['name'] as String?) ?? 'Unknown Charger';
-
-      // ── Address ───────────────────────────────────────────────────────────
       final String address = (data['address'] as String?) ?? 'Address not available';
-
-      // ── Network ───────────────────────────────────────────────────────────
       final String network = (data['network'] as String?) ?? 'Independent';
 
-      // ── GeoPoint → latitude / longitude ──────────────────────────────────
-      double latitude = 28.6304;  // Default: New Delhi Connaught Place
+      double latitude = 28.6304;
       double longitude = 77.2177;
       final dynamic locationField = data['location'];
       if (locationField is GeoPoint) {
         latitude = locationField.latitude;
         longitude = locationField.longitude;
-      } else {
-        debugPrint(
-          '[FirestoreChargerRepository] Warning: "location" field missing or not a '
-          'GeoPoint for document $docId. Using default coordinates.',
-        );
       }
 
-      // ── Rating ────────────────────────────────────────────────────────────
       final double rating = (data['rating'] as num?)?.toDouble() ?? 4.5;
-
-      // ── Power ─────────────────────────────────────────────────────────────
       final String power = (data['power'] as String?) ?? '50kW';
-
-      // ── Price per unit ────────────────────────────────────────────────────
       final String price = (data['pricePerUnit'] as String?) ?? '₹21/kWh';
 
-      // ── Status (string → enum) ────────────────────────────────────────────
       final String? rawStatus = data['status'] as String?;
       final MarkerStatus status = _parseStatus(rawStatus);
 
-      // ── Connector counts ─────────────────────────────────────────────────
       final int? rawTotal = (data['totalConnectors'] as num?)?.toInt();
       final int? rawAvailable = (data['availableConnectors'] as num?)?.toInt();
       final int totalConnectors = rawTotal ?? 4;
@@ -288,7 +409,6 @@ class FirestoreChargerRepository {
           ? '$availableConnectors/$totalConnectors Available'
           : 'Availability Unknown';
 
-      // ── Timestamp / lastUpdated ─────────────────────────────────────────
       final dynamic rawUpdatedAt = data['updatedAt'] ?? data['lastUpdated'];
       String? lastUpdated;
       if (rawUpdatedAt is Timestamp) {
@@ -298,27 +418,39 @@ class FirestoreChargerRepository {
         lastUpdated = rawUpdatedAt;
       }
 
-      // ── Image URL ─────────────────────────────────────────────────────────
       final String? imageUrl = data['imageUrl'] as String?;
-
-      // ── Connector types ───────────────────────────────────────────────────
       final List<String> connectorTypes =
           (data['connectorTypes'] as List<dynamic>?)
                   ?.map((e) => e.toString())
                   .toList() ??
               ['CCS2', 'Type 2'];
 
-      // ── Derived: powerType ────────────────────────────────────────────────
-      // Parse kW numeric value from the power string (e.g. "150kW" → 150)
       final powerKw = double.tryParse(
             power.replaceAll(RegExp(r'[^0-9.]'), ''),
           ) ??
           50.0;
-      final String powerType = powerKw >= 100.0
-          ? 'Ultra Fast'
-          : powerKw >= 22.0
-              ? 'Fast'
-              : 'AC';
+      final String powerType = (data['powerType'] as String?) ??
+          (powerKw >= 100.0
+              ? 'Ultra Fast'
+              : powerKw >= 22.0
+                  ? 'Fast'
+                  : 'AC');
+
+      final String? ownerId = data['ownerId'] as String?;
+      final String? createdBy = data['createdBy'] as String?;
+      final String verificationStatus = (data['verificationStatus'] as String?) ?? 'approved';
+      final bool isVerified = (data['isVerified'] as bool?) ?? (verificationStatus == 'approved');
+      final String? verifiedBy = data['verifiedBy'] as String?;
+      final String? phoneNumber = data['phoneNumber'] as String?;
+      final String? website = data['website'] as String?;
+      final String? city = data['city'] as String?;
+      final String? state = data['state'] as String?;
+      final String? country = data['country'] as String?;
+      final List<String>? amenities = (data['amenities'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList();
+      final dynamic createdAt = data['createdAt'];
+      final dynamic updatedAt = data['updatedAt'];
 
       return MapMarkerModel(
         id: id,
@@ -339,11 +471,23 @@ class FirestoreChargerRepository {
         connectorCount: totalConnectors,
         connectors: connectorTypes,
         powerType: powerType,
-        openingHours: '24 Hours',
-        source: 'evhub_verified',
-        isVerified: true,
+        openingHours: (data['openingHours'] as String?) ?? '24 Hours',
+        source: (data['source'] as String?) ?? 'evhub_verified',
+        isVerified: isVerified,
         availabilityStatus: availabilityStatus,
         lastUpdated: lastUpdated,
+        ownerId: ownerId,
+        createdBy: createdBy,
+        verificationStatus: verificationStatus,
+        verifiedBy: verifiedBy,
+        phoneNumber: phoneNumber,
+        website: website,
+        city: city,
+        state: state,
+        country: country,
+        amenities: amenities,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
       );
     } catch (e) {
       debugPrint(
@@ -359,22 +503,49 @@ class FirestoreChargerRepository {
 
   /// Converts a [MapMarkerModel] into a Firestore-compatible map for writes.
   Map<String, dynamic> _modelToDocument(MapMarkerModel charger) {
-    return {
+    final Map<String, dynamic> doc = {
       'id': charger.id,
       'name': charger.title,
       'address': charger.address ?? charger.description,
+      'city': charger.city ?? '',
+      'state': charger.state ?? '',
+      'country': charger.country ?? 'India',
       'network': charger.network,
       'location': GeoPoint(charger.latitude, charger.longitude),
       'rating': charger.rating,
       'power': charger.power,
+      'powerType': charger.powerType,
       'pricePerUnit': charger.price ?? '₹21/kWh',
       'status': _statusToString(charger.status),
       'totalConnectors': charger.connectorCount,
       'availableConnectors': _parseAvailableCount(charger.availableStalls),
+      'occupiedConnectors': charger.occupiedConnectorsCount,
       'imageUrl': charger.photoUrl,
       'connectorTypes': charger.connectors,
+      'openingHours': charger.openingHours,
+      'phoneNumber': charger.phoneNumber,
+      'website': charger.website,
+      'amenities': charger.amenities ?? [],
+      'description': charger.description,
+      'ownerId': charger.ownerId,
+      'createdBy': charger.createdBy,
+      'isVerified': charger.isVerified,
+      'verificationStatus': charger.verificationStatus,
+      'verifiedBy': charger.verifiedBy,
+      'source': charger.source.isEmpty ? 'evhub_verified' : charger.source,
       'updatedAt': FieldValue.serverTimestamp(),
+      'lastUpdated': FieldValue.serverTimestamp(),
     };
+
+    if (charger.createdAt != null) {
+      doc['createdAt'] = charger.createdAt is DateTime
+          ? Timestamp.fromDate(charger.createdAt)
+          : charger.createdAt;
+    } else {
+      doc['createdAt'] = FieldValue.serverTimestamp();
+    }
+
+    return doc;
   }
 
   // ───────────────────────────────────────────────────────────
@@ -382,8 +553,6 @@ class FirestoreChargerRepository {
   // ───────────────────────────────────────────────────────────
 
   /// Converts a Firestore status string to [MarkerStatus] enum.
-  /// Accepts: "available", "busy", "offline" (case-insensitive).
-  /// Defaults to [MarkerStatus.available] for any unknown value.
   MarkerStatus _parseStatus(String? raw) {
     if (raw == null || raw.trim().isEmpty) {
       return MarkerStatus.unknown;
@@ -426,3 +595,4 @@ class FirestoreChargerRepository {
     return 0;
   }
 }
+
