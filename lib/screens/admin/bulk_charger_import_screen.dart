@@ -150,8 +150,15 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
               const SizedBox(height: 20),
             ],
 
-            // Step 1: File Selection & Template Download Card
-            _buildUploadSection(bulkProvider, adminProvider, currentUser),
+            // Source Selector: NREL API vs CSV File Upload
+            _buildSourceSelector(bulkProvider),
+            const SizedBox(height: 20),
+
+            // Step 1: Import Source Section (NREL API or CSV Upload)
+            if (bulkProvider.sourceMode == ImportSourceMode.nrelApi)
+              _buildNrelApiSection(bulkProvider, adminProvider)
+            else
+              _buildUploadSection(bulkProvider, adminProvider, currentUser),
             const SizedBox(height: 24),
 
             // Preview & Validation Results Section
@@ -176,6 +183,239 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSourceSelector(BulkImportProvider bulkProvider) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => bulkProvider.setSourceMode(ImportSourceMode.nrelApi),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: bulkProvider.sourceMode == ImportSourceMode.nrelApi ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.public_rounded,
+                      size: 18,
+                      color: bulkProvider.sourceMode == ImportSourceMode.nrelApi ? Colors.black : Colors.white70,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'U.S. NREL API (DOE)',
+                      style: TextStyle(
+                        color: bulkProvider.sourceMode == ImportSourceMode.nrelApi ? Colors.black : Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => bulkProvider.setSourceMode(ImportSourceMode.csvFile),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: bulkProvider.sourceMode == ImportSourceMode.csvFile ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.upload_file_rounded,
+                      size: 18,
+                      color: bulkProvider.sourceMode == ImportSourceMode.csvFile ? Colors.black : Colors.white70,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Upload CSV File',
+                      style: TextStyle(
+                        color: bulkProvider.sourceMode == ImportSourceMode.csvFile ? Colors.black : Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNrelApiSection(BulkImportProvider bulkProvider, AdminChargerProvider adminProvider) {
+    const statesList = ['ALL', 'CA', 'NY', 'TX', 'FL', 'WA', 'IL', 'MA', 'NC', 'CO', 'GA', 'PA', 'OH'];
+    const limitList = [50, 100, 250, 500];
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(24),
+      borderRadius: 24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.cloud_download_rounded, color: AppColors.primary, size: 22),
+              SizedBox(width: 10),
+              Text(
+                'Import from NREL Alternative Fuel Stations API',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Fetch official public EV station data directly from the U.S. Department of Energy NREL API.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 20),
+
+          // Filters Row
+          Row(
+            children: [
+              // State Dropdown
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('U.S. State Filter', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withOpacity(0.15)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: bulkProvider.selectedState,
+                          dropdownColor: AppColors.card,
+                          isExpanded: true,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          items: statesList.map((st) {
+                            return DropdownMenuItem<String>(
+                              value: st,
+                              child: Text(st == 'ALL' ? 'All U.S. States' : st),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) bulkProvider.setSelectedState(val);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Limit Dropdown
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Station Limit', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withOpacity(0.15)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: bulkProvider.apiLimit,
+                          dropdownColor: AppColors.card,
+                          isExpanded: true,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          items: limitList.map((lim) {
+                            return DropdownMenuItem<int>(
+                              value: lim,
+                              child: Text('$lim Stations'),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) bulkProvider.setApiLimit(val);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Custom API Key (Optional)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('NREL API Key (Optional — Defaults to DEMO_KEY)', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              TextField(
+                onChanged: (val) => bulkProvider.setCustomApiKey(val),
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Paste custom NREL API Key here...',
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                  filled: true,
+                  fillColor: Colors.white.withOpacity(0.06),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Fetch Action Button
+          SizedBox(
+            width: double.infinity,
+            child: PremiumButton(
+              text: bulkProvider.isProcessing && bulkProvider.step == BulkImportStep.parsing
+                  ? 'Fetching & Validating NREL Data...'
+                  : 'Fetch Data & Preview Chargers',
+              icon: Icons.travel_explore_rounded,
+              isLoading: bulkProvider.isProcessing && bulkProvider.step == BulkImportStep.parsing,
+              onPressed: () {
+                if (!bulkProvider.isProcessing) {
+                  bulkProvider.fetchFromNrelApi(existingChargers: adminProvider.allChargers);
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

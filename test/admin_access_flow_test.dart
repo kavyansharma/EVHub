@@ -188,28 +188,6 @@ void main() {
       mockChargerRepo = MockFirestoreChargerRepository();
     });
 
-    Widget createTestApp({
-      required AuthProvider authProvider,
-      required AdminChargerProvider adminChargerProvider,
-      required ChargerDataDashboardProvider dashboardProvider,
-      required ProfileProvider profileProvider,
-      String initialRoute = AppRoutes.home,
-    }) {
-      return MultiProvider(
-        providers: [
-          ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider(mockStorageService)),
-          ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
-          ChangeNotifierProvider<AdminChargerProvider>.value(value: adminChargerProvider),
-          ChangeNotifierProvider<ChargerDataDashboardProvider>.value(value: dashboardProvider),
-          ChangeNotifierProvider<ProfileProvider>.value(value: profileProvider),
-        ],
-        child: MaterialApp(
-          initialRoute: initialRoute,
-          onGenerateRoute: AppRoutes.generateRoute,
-        ),
-      );
-    }
-
     test('TEST 1: Admin Firestore role "admin" is parsed as Role.admin', () {
       final json = {'id': '123', 'email': 'a@b.com', 'name': 'Admin', 'role': 'admin'};
       final user = UserModel.fromJson(json);

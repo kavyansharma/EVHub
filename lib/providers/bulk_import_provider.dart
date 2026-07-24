@@ -3,15 +3,31 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/map_marker_model.dart';
 import '../models/user_model.dart';
+import '../services/bulk_data_source.dart';
 import '../services/csv_import_service.dart';
 import '../services/file_download_helper.dart';
+import '../services/nrel_charger_data_source.dart';
 
 enum BulkImportStep { idle, parsing, previewReady, importing, complete }
 
+enum ImportSourceMode { nrelApi, csvFile }
+
 class BulkImportProvider extends ChangeNotifier {
   final CsvImportService _importService = CsvImportService();
+  final BulkChargerDataSource _nrelDataSource;
+
+  BulkImportProvider({BulkChargerDataSource? nrelDataSource})
+      : _nrelDataSource = nrelDataSource ?? NrelChargerDataSource();
 
   BulkImportStep _step = BulkImportStep.idle;
+  ImportSourceMode _sourceMode = ImportSourceMode.nrelApi;
+
+  // NREL API Options
+  String _selectedState = 'ALL';
+  int _apiLimit = 100;
+  String _customApiKey = '';
+
+  // CSV State
   String? _fileName;
   Uint8List? _fileBytes;
 
@@ -28,6 +44,10 @@ class BulkImportProvider extends ChangeNotifier {
 
   // Getters
   BulkImportStep get step => _step;
+  ImportSourceMode get sourceMode => _sourceMode;
+  String get selectedState => _selectedState;
+  int get apiLimit => _apiLimit;
+  String get customApiKey => _customApiKey;
   String? get fileName => _fileName;
   List<CsvRowValidationResult> get validationResults => _validationResults;
   String get importStrategy => _importStrategy;
@@ -49,6 +69,26 @@ class BulkImportProvider extends ChangeNotifier {
       .map((r) => r.parsedModel!)
       .toList();
 
+  void setSourceMode(ImportSourceMode mode) {
+    _sourceMode = mode;
+    notifyListeners();
+  }
+
+  void setSelectedState(String state) {
+    _selectedState = state;
+    notifyListeners();
+  }
+
+  void setApiLimit(int limit) {
+    _apiLimit = limit;
+    notifyListeners();
+  }
+
+  void setCustomApiKey(String key) {
+    _customApiKey = key;
+    notifyListeners();
+  }
+
   void setImportStrategy(String strategy) {
     _importStrategy = strategy;
     notifyListeners();
@@ -66,6 +106,43 @@ class BulkImportProvider extends ChangeNotifier {
     _progressCurrent = 0;
     _progressTotal = 0;
     notifyListeners();
+  }
+
+  /// Fetches EV charging station records from the U.S. NREL API and runs deduplication.
+  Future<void> fetchFromNrelApi({
+    required List<MapMarkerModel> existingChargers,
+    BulkChargerDataSource? customDataSource,
+  }) async {
+    _isProcessing = true;
+    _errorMessage = null;
+    _step = BulkImportStep.parsing;
+    notifyListeners();
+
+    try {
+      final dataSource = customDataSource ?? _nrelDataSource;
+      final fetched = await dataSource.fetchChargers(options: {
+        'apiKey': _customApiKey.isNotEmpty ? _customApiKey : null,
+        'state': _selectedState,
+        'limit': _apiLimit,
+      });
+
+      if (fetched.isEmpty) {
+        throw Exception('No EV chargers were returned from NREL API for the selected filters.');
+      }
+
+      _validationResults = _importService.processFetchedChargers(
+        fetchedChargers: fetched,
+        existingFirestoreChargers: existingChargers,
+      );
+
+      _step = BulkImportStep.previewReady;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _step = BulkImportStep.idle;
+    } finally {
+      _isProcessing = false;
+      notifyListeners();
+    }
   }
 
   /// Select CSV file cross-platform using file_picker byte loading

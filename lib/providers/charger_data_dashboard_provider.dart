@@ -245,6 +245,8 @@ Dashboard Data Count: ${_chargers.length}
   // =========================================================================
   int get evhubVerifiedCount => _chargers.where((c) => c.source == 'evhub_verified' || c.isVerified).length;
   double get evhubVerifiedPercentage => _chargers.isNotEmpty ? (evhubVerifiedCount / _chargers.length) * 100 : 0.0;
+  int get bulkImportCount => _chargers.where((c) => c.source == 'bulk_import' && !c.isVerified).length;
+  double get bulkImportPercentage => _chargers.isNotEmpty ? (bulkImportCount / _chargers.length) * 100 : 0.0;
   int get googlePlacesCount => _chargers.where((c) => c.source == 'google_places').length;
   double get googlePlacesPercentage => _chargers.isNotEmpty ? (googlePlacesCount / _chargers.length) * 100 : 0.0;
 

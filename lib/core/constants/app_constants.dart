@@ -23,4 +23,8 @@ class AppConstants {
   
   // Google Maps API Key
   static const String googleMapsApiKey = 'AIzaSyBkRQGLVDyA-tvIbGdK63H49GiF2yS12tw';
+
+  // NREL Alternative Fuel Stations API Configuration
+  static const String nrelApiBaseUrl = 'https://developer.nrel.gov/api/alt-fuel-stations/v1.json';
+  static const String nrelApiKey = 'DEMO_KEY';
 }

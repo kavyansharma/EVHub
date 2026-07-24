@@ -295,7 +295,102 @@ class CsvImportService {
     return results;
   }
 
-  /// Batch writes valid chargers to Firestore in chunks of <= 450 documents.
+  /// Processes a list of pre-parsed models (e.g. from NREL API or external source)
+  /// and performs deduplication against existing Firestore chargers.
+  List<CsvRowValidationResult> processFetchedChargers({
+    required List<MapMarkerModel> fetchedChargers,
+    required List<MapMarkerModel> existingFirestoreChargers,
+  }) {
+    final List<CsvRowValidationResult> results = [];
+    final List<MapMarkerModel> batchProcessedChargers = [];
+
+    for (int i = 0; i < fetchedChargers.length; i++) {
+      final charger = fetchedChargers[i];
+      final int rowNum = i + 1;
+
+      final Map<String, String> rawMap = {
+        'id': charger.id,
+        'name': charger.title,
+        'network': charger.network,
+        'address': charger.address ?? charger.description,
+        'latitude': charger.latitude.toString(),
+        'longitude': charger.longitude.toString(),
+        'city': charger.city ?? '',
+        'state': charger.state ?? '',
+        'country': charger.country ?? '',
+        'source': charger.source,
+      };
+
+      final List<String> errors = [];
+      if (charger.title.isEmpty) errors.add('name → Charger name is required');
+      if (charger.latitude < -90.0 || charger.latitude > 90.0) errors.add('latitude → Invalid latitude');
+      if (charger.longitude < -180.0 || charger.longitude > 180.0) errors.add('longitude → Invalid longitude');
+
+      DuplicateClassification duplicateStatus = DuplicateClassification.newCharger;
+      MapMarkerModel? duplicateMatch;
+      double? minDistanceMeters;
+
+      if (errors.isEmpty) {
+        final List<MapMarkerModel> candidates = [
+          ...existingFirestoreChargers,
+          ...batchProcessedChargers,
+        ];
+
+        for (final existing in candidates) {
+          // Check 1: External ID Match
+          if (charger.id.isNotEmpty && charger.id == existing.id) {
+            duplicateStatus = DuplicateClassification.exactDuplicate;
+            duplicateMatch = existing;
+            minDistanceMeters = 0.0;
+            break;
+          }
+
+          // Check 2: 100m Distance + Name Similarity Match
+          final dist = Geolocator.distanceBetween(
+            charger.latitude,
+            charger.longitude,
+            existing.latitude,
+            existing.longitude,
+          );
+
+          if (dist <= 100.0) {
+            final bool nameSimilar = _areNamesSimilar(charger.title, existing.title);
+            final bool networkMatches = _normalize(charger.network) == _normalize(existing.network);
+
+            if (nameSimilar && networkMatches) {
+              duplicateStatus = DuplicateClassification.exactDuplicate;
+              duplicateMatch = existing;
+              minDistanceMeters = dist;
+              break;
+            } else if (nameSimilar || networkMatches || dist <= 30.0) {
+              duplicateStatus = DuplicateClassification.possibleDuplicate;
+              duplicateMatch = existing;
+              minDistanceMeters = dist;
+            }
+          }
+        }
+
+        if (duplicateStatus == DuplicateClassification.newCharger) {
+          batchProcessedChargers.add(charger);
+        }
+      }
+
+      results.add(CsvRowValidationResult(
+        rowNumber: rowNum,
+        rawValues: rawMap,
+        isValid: errors.isEmpty,
+        errors: errors,
+        duplicateStatus: duplicateStatus,
+        existingDuplicateCharger: duplicateMatch,
+        duplicateDistanceMeters: minDistanceMeters,
+        parsedModel: charger,
+      ));
+    }
+
+    return results;
+  }
+
+  /// Batch writes valid chargers to Firestore in chunks of <= 400 documents.
   Future<int> performBatchImport({
     required List<MapMarkerModel> chargersToImport,
     required String adminUid,
@@ -328,7 +423,7 @@ class CsvImportService {
           'address': charger.address ?? charger.description,
           'city': charger.city ?? '',
           'state': charger.state ?? '',
-          'country': charger.country ?? 'India',
+          'country': charger.country ?? 'US',
           'network': charger.network,
           'location': GeoPoint(charger.latitude, charger.longitude),
           'rating': charger.rating,
@@ -348,10 +443,10 @@ class CsvImportService {
           'description': charger.description,
           'ownerId': adminUid,
           'createdBy': adminName,
-          'isVerified': true,
-          'verificationStatus': 'approved',
-          'verifiedBy': adminUid,
-          'source': 'evhub_verified',
+          'isVerified': charger.isVerified,
+          'verificationStatus': charger.verificationStatus,
+          'verifiedBy': charger.isVerified ? adminUid : null,
+          'source': charger.source,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
           'lastUpdated': FieldValue.serverTimestamp(),
