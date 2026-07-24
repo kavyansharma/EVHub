@@ -463,6 +463,34 @@ Kazam Hub,Kazam,Indiranagar,Bengaluru,Karnataka,India,12.9784,77.6408,4,4,60kW''
         expect(validCount, greaterThan(0));
       }
     });
+
+    test('TEST 29: 10,000-Record Scale Dataset Simulation & Memory Safety', () {
+      final service = CsvImportService();
+      const size = 10000;
+
+      final List<MapMarkerModel> hugeDataset = List.generate(size, (i) {
+        return MapMarkerModel(
+          id: 'ocm_${200000 + i}',
+          title: 'Mega India Charging Hub #$i',
+          description: 'Highway Loc #$i',
+          latitude: 12.0 + (i / 100).floor() * 0.001,
+          longitude: 72.0 + (i % 100) * 0.001,
+          type: MarkerType.station,
+          network: 'Ather Energy',
+          source: 'bulk_import',
+          isVerified: false,
+        );
+      });
+
+      final results = service.processFetchedChargers(
+        fetchedChargers: hugeDataset,
+        existingFirestoreChargers: [],
+      );
+
+      expect(results.length, equals(10000));
+      final validCount = results.where((r) => r.isValid && !r.isDuplicate).length;
+      expect(validCount, equals(10000));
+    });
   });
 }
 
