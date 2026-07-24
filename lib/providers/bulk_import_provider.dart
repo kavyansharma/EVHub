@@ -7,20 +7,29 @@ import '../services/bulk_data_source.dart';
 import '../services/csv_import_service.dart';
 import '../services/file_download_helper.dart';
 import '../services/nrel_charger_data_source.dart';
+import '../services/open_charge_map_charger_data_source.dart';
 
 enum BulkImportStep { idle, parsing, previewReady, importing, complete }
 
-enum ImportSourceMode { nrelApi, csvFile }
+enum ImportSourceMode { openChargeMapIndia, nrelApi, csvFile }
 
 class BulkImportProvider extends ChangeNotifier {
   final CsvImportService _importService = CsvImportService();
   final BulkChargerDataSource _nrelDataSource;
+  final BulkChargerDataSource _ocmDataSource;
 
-  BulkImportProvider({BulkChargerDataSource? nrelDataSource})
-      : _nrelDataSource = nrelDataSource ?? NrelChargerDataSource();
+  BulkImportProvider({
+    BulkChargerDataSource? nrelDataSource,
+    BulkChargerDataSource? ocmDataSource,
+  })  : _nrelDataSource = nrelDataSource ?? NrelChargerDataSource(),
+        _ocmDataSource = ocmDataSource ?? OpenChargeMapChargerDataSource();
 
   BulkImportStep _step = BulkImportStep.idle;
-  ImportSourceMode _sourceMode = ImportSourceMode.nrelApi;
+  ImportSourceMode _sourceMode = ImportSourceMode.openChargeMapIndia;
+
+  // Open Charge Map Options
+  int _ocmLimit = 250;
+  String _customOcmApiKey = '';
 
   // NREL API Options
   String _selectedState = 'ALL';
@@ -45,6 +54,8 @@ class BulkImportProvider extends ChangeNotifier {
   // Getters
   BulkImportStep get step => _step;
   ImportSourceMode get sourceMode => _sourceMode;
+  int get ocmLimit => _ocmLimit;
+  String get customOcmApiKey => _customOcmApiKey;
   String get selectedState => _selectedState;
   int get apiLimit => _apiLimit;
   String get customApiKey => _customApiKey;
@@ -71,6 +82,16 @@ class BulkImportProvider extends ChangeNotifier {
 
   void setSourceMode(ImportSourceMode mode) {
     _sourceMode = mode;
+    notifyListeners();
+  }
+
+  void setOcmLimit(int limit) {
+    _ocmLimit = limit;
+    notifyListeners();
+  }
+
+  void setCustomOcmApiKey(String key) {
+    _customOcmApiKey = key;
     notifyListeners();
   }
 
@@ -106,6 +127,48 @@ class BulkImportProvider extends ChangeNotifier {
     _progressCurrent = 0;
     _progressTotal = 0;
     notifyListeners();
+  }
+
+  /// Fetches Indian EV charging stations from Open Charge Map API and performs deduplication.
+  Future<void> fetchFromOpenChargeMapApi({
+    required List<MapMarkerModel> existingChargers,
+    BulkChargerDataSource? customDataSource,
+  }) async {
+    _isProcessing = true;
+    _errorMessage = null;
+    _step = BulkImportStep.parsing;
+    _progressCurrent = 0;
+    _progressTotal = _ocmLimit;
+    notifyListeners();
+
+    try {
+      final dataSource = customDataSource ?? _ocmDataSource;
+      final fetched = await dataSource.fetchChargers(options: {
+        'apiKey': _customOcmApiKey.isNotEmpty ? _customOcmApiKey : null,
+        'limit': _ocmLimit,
+        'onProgress': (count, page) {
+          _progressCurrent = count;
+          notifyListeners();
+        },
+      });
+
+      if (fetched.isEmpty) {
+        throw Exception('No EV chargers were returned from Open Charge Map for India.');
+      }
+
+      _validationResults = _importService.processFetchedChargers(
+        fetchedChargers: fetched,
+        existingFirestoreChargers: existingChargers,
+      );
+
+      _step = BulkImportStep.previewReady;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _step = BulkImportStep.idle;
+    } finally {
+      _isProcessing = false;
+      notifyListeners();
+    }
   }
 
   /// Fetches EV charging station records from the U.S. NREL API and runs deduplication.

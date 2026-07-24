@@ -150,12 +150,14 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
               const SizedBox(height: 20),
             ],
 
-            // Source Selector: NREL API vs CSV File Upload
+            // Source Selector: Open Charge Map India (Default) vs NREL API vs CSV Upload
             _buildSourceSelector(bulkProvider),
             const SizedBox(height: 20),
 
-            // Step 1: Import Source Section (NREL API or CSV Upload)
-            if (bulkProvider.sourceMode == ImportSourceMode.nrelApi)
+            // Step 1: Import Source Section
+            if (bulkProvider.sourceMode == ImportSourceMode.openChargeMapIndia)
+              _buildOcmIndiaSection(bulkProvider, adminProvider)
+            else if (bulkProvider.sourceMode == ImportSourceMode.nrelApi)
               _buildNrelApiSection(bulkProvider, adminProvider)
             else
               _buildUploadSection(bulkProvider, adminProvider, currentUser),
@@ -199,6 +201,34 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
         children: [
           Expanded(
             child: GestureDetector(
+              onTap: () => bulkProvider.setSourceMode(ImportSourceMode.openChargeMapIndia),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: bulkProvider.sourceMode == ImportSourceMode.openChargeMapIndia ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('🇮🇳', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'OCM — India',
+                      style: TextStyle(
+                        color: bulkProvider.sourceMode == ImportSourceMode.openChargeMapIndia ? Colors.black : Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
               onTap: () => bulkProvider.setSourceMode(ImportSourceMode.nrelApi),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -209,19 +239,16 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.public_rounded,
-                      size: 18,
-                      color: bulkProvider.sourceMode == ImportSourceMode.nrelApi ? Colors.black : Colors.white70,
-                    ),
-                    const SizedBox(width: 8),
+                    Text('🇺🇸', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 6),
                     Text(
-                      'U.S. NREL API (DOE)',
+                      'NREL API',
                       style: TextStyle(
                         color: bulkProvider.sourceMode == ImportSourceMode.nrelApi ? Colors.black : Colors.white70,
                         fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                        fontSize: 12,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -242,21 +269,169 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
                   children: [
                     Icon(
                       Icons.upload_file_rounded,
-                      size: 18,
+                      size: 16,
                       color: bulkProvider.sourceMode == ImportSourceMode.csvFile ? Colors.black : Colors.white70,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Text(
-                      'Upload CSV File',
+                      'CSV File',
                       style: TextStyle(
                         color: bulkProvider.sourceMode == ImportSourceMode.csvFile ? Colors.black : Colors.white70,
                         fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                        fontSize: 12,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOcmIndiaSection(BulkImportProvider bulkProvider, AdminChargerProvider adminProvider) {
+    const limitList = [50, 100, 250, 500, 1000, 5000];
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(24),
+      borderRadius: 24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Text('🇮🇳', style: TextStyle(fontSize: 22)),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Import India Chargers from Open Charge Map',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Fetch official public EV charging stations in India directly from Open Charge Map API (countrycode=IN). Automatically filters out non-India locations and invalid coordinates.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 20),
+
+          // Filters Row
+          Row(
+            children: [
+              // Fixed Country Filter
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Target Country', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        children: const [
+                          Text('🇮🇳', style: TextStyle(fontSize: 16)),
+                          SizedBox(width: 8),
+                          Text('India (IN)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 14),
+
+              // Maximum Results Dropdown
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Max Results', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withOpacity(0.15)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: bulkProvider.ocmLimit,
+                          dropdownColor: AppColors.card,
+                          isExpanded: true,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          items: limitList.map((lim) {
+                            return DropdownMenuItem<int>(
+                              value: lim,
+                              child: Text('$lim Chargers'),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) bulkProvider.setOcmLimit(val);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Custom OCM API Key (Optional)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Open Charge Map API Key (Optional for Public Rate Limits)', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              TextField(
+                onChanged: (val) => bulkProvider.setCustomOcmApiKey(val),
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Paste custom OCM API Key here...',
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                  filled: true,
+                  fillColor: Colors.white.withOpacity(0.06),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Fetch Action Button
+          SizedBox(
+            width: double.infinity,
+            child: PremiumButton(
+              text: bulkProvider.isProcessing && bulkProvider.step == BulkImportStep.parsing
+                  ? 'Fetching & Validating India Chargers (${bulkProvider.progressCurrent})...'
+                  : 'Fetch India Chargers & Preview',
+              icon: Icons.travel_explore_rounded,
+              isLoading: bulkProvider.isProcessing && bulkProvider.step == BulkImportStep.parsing,
+              onPressed: () {
+                if (!bulkProvider.isProcessing) {
+                  bulkProvider.fetchFromOpenChargeMapApi(existingChargers: adminProvider.allChargers);
+                }
+              },
             ),
           ),
         ],

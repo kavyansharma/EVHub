@@ -336,12 +336,4 @@ class _MockFirestoreRepo implements FirestoreChargerRepository {
 
   @override
   Future<void> updateCharger(MapMarkerModel charger) async {}
-
-  @override
-  Future<void> updateVerificationStatus({
-    required String chargerId,
-    required String verificationStatus,
-    required bool isVerified,
-    required String verifiedByUid,
-  }) async {}
 }

@@ -27,4 +27,8 @@ class AppConstants {
   // NREL Alternative Fuel Stations API Configuration
   static const String nrelApiBaseUrl = 'https://developer.nrel.gov/api/alt-fuel-stations/v1.json';
   static const String nrelApiKey = 'DEMO_KEY';
+
+  // Open Charge Map API Configuration (India Bulk Importer)
+  static const String openChargeMapApiBaseUrl = 'https://api.openchargemap.io/v3/poi/';
+  static const String openChargeMapApiKey = ''; // Inject via UI or environment variable
 }

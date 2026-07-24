@@ -423,7 +423,7 @@ class CsvImportService {
           'address': charger.address ?? charger.description,
           'city': charger.city ?? '',
           'state': charger.state ?? '',
-          'country': charger.country ?? 'US',
+          'country': charger.country ?? 'India',
           'network': charger.network,
           'location': GeoPoint(charger.latitude, charger.longitude),
           'rating': charger.rating,
