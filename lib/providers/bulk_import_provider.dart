@@ -51,6 +51,10 @@ class BulkImportProvider extends ChangeNotifier {
   int _progressCurrent = 0;
   int _progressTotal = 0;
 
+  int _totalApiRecords = 0;
+  int _nonIndiaRejectedCount = 0;
+  int _invalidCoordCount = 0;
+
   // Getters
   BulkImportStep get step => _step;
   ImportSourceMode get sourceMode => _sourceMode;
@@ -64,6 +68,10 @@ class BulkImportProvider extends ChangeNotifier {
   String get importStrategy => _importStrategy;
   bool get isProcessing => _isProcessing;
   String? get errorMessage => _errorMessage;
+
+  int get totalApiRecords => _totalApiRecords;
+  int get nonIndiaRejectedCount => _nonIndiaRejectedCount;
+  int get invalidCoordCount => _invalidCoordCount;
 
   int get totalRows => _validationResults.length;
   int get validRowsCount => _validationResults.where((r) => r.isValid && !r.isDuplicate).length;
@@ -126,6 +134,9 @@ class BulkImportProvider extends ChangeNotifier {
     _skippedDuplicateCount = 0;
     _progressCurrent = 0;
     _progressTotal = 0;
+    _totalApiRecords = 0;
+    _nonIndiaRejectedCount = 0;
+    _invalidCoordCount = 0;
     notifyListeners();
   }
 
@@ -139,21 +150,42 @@ class BulkImportProvider extends ChangeNotifier {
     _step = BulkImportStep.parsing;
     _progressCurrent = 0;
     _progressTotal = _ocmLimit;
+    _totalApiRecords = 0;
+    _nonIndiaRejectedCount = 0;
+    _invalidCoordCount = 0;
     notifyListeners();
 
     try {
       final dataSource = customDataSource ?? _ocmDataSource;
-      final fetched = await dataSource.fetchChargers(options: {
-        'apiKey': _customOcmApiKey.isNotEmpty ? _customOcmApiKey : null,
-        'limit': _ocmLimit,
-        'onProgress': (count, page) {
-          _progressCurrent = count;
-          notifyListeners();
-        },
-      });
+      List<MapMarkerModel> fetched = [];
+
+      if (dataSource is OpenChargeMapChargerDataSource) {
+        final statsResult = await dataSource.fetchChargersWithStats(options: {
+          'apiKey': _customOcmApiKey.isNotEmpty ? _customOcmApiKey : null,
+          'limit': _ocmLimit,
+          'onProgress': (count, page) {
+            _progressCurrent = count;
+            notifyListeners();
+          },
+        });
+        fetched = statsResult.validChargers;
+        _totalApiRecords = statsResult.totalApiRecords;
+        _nonIndiaRejectedCount = statsResult.nonIndiaRejectedCount;
+        _invalidCoordCount = statsResult.invalidCoordCount;
+      } else {
+        fetched = await dataSource.fetchChargers(options: {
+          'apiKey': _customOcmApiKey.isNotEmpty ? _customOcmApiKey : null,
+          'limit': _ocmLimit,
+          'onProgress': (count, page) {
+            _progressCurrent = count;
+            notifyListeners();
+          },
+        });
+        _totalApiRecords = fetched.length;
+      }
 
       if (fetched.isEmpty) {
-        throw Exception('No EV chargers were returned from Open Charge Map for India.');
+        throw Exception('No valid EV chargers were returned from Open Charge Map for India.');
       }
 
       _validationResults = _importService.processFetchedChargers(

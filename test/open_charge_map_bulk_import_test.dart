@@ -66,6 +66,50 @@ void main() {
       expect(c.isVerified, isFalse);
     });
 
+    test('TEST 1B: fetchChargersWithStats tracks total, valid, and rejection metrics', () async {
+      final mockJson = [
+        {
+          'ID': 99010,
+          'AddressInfo': {
+            'Title': 'Valid India Hub',
+            'Latitude': 19.0760,
+            'Longitude': 72.8777,
+            'Country': {'ISOCode': 'IN', 'Title': 'India'},
+          },
+        },
+        {
+          'ID': 99011,
+          'AddressInfo': {
+            'Title': 'US Station',
+            'Latitude': 37.7749,
+            'Longitude': -122.4194,
+            'Country': {'ISOCode': 'US', 'Title': 'United States'},
+          },
+        },
+        {
+          'ID': 99012,
+          'AddressInfo': {
+            'Title': 'Bad Coords Station',
+            'Latitude': 80.0, // Invalid latitude
+            'Longitude': 72.0,
+            'Country': {'ISOCode': 'IN', 'Title': 'India'},
+          },
+        },
+      ];
+
+      final client = http_testing.MockClient((request) async {
+        return http.Response(json.encode(mockJson), 200);
+      });
+
+      final dataSource = OpenChargeMapChargerDataSource(client: client);
+      final stats = await dataSource.fetchChargersWithStats();
+
+      expect(stats.totalApiRecords, equals(3));
+      expect(stats.validChargers.length, equals(1));
+      expect(stats.nonIndiaRejectedCount, equals(1));
+      expect(stats.invalidCoordCount, equals(1));
+    });
+
     // ------------------------------------------------------------------------
     // TEST 2 & 3: Strict India Country Filtering & Non-India Rejection
     // ------------------------------------------------------------------------

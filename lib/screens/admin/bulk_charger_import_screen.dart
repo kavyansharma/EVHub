@@ -393,13 +393,21 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Open Charge Map API Key (Optional for Public Rate Limits)', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+              const Text(
+                'Open Charge Map API Key (Development / Demo Only)',
+                style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'Production environment proxies API calls via Firebase Cloud Functions using Secrets Manager.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
+              ),
               const SizedBox(height: 6),
               TextField(
                 onChanged: (val) => bulkProvider.setCustomOcmApiKey(val),
                 style: const TextStyle(color: Colors.white, fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'Paste custom OCM API Key here...',
+                  hintText: 'Paste dev OCM API Key here...',
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
                   filled: true,
                   fillColor: Colors.white.withOpacity(0.06),
@@ -679,15 +687,46 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
   }
 
   Widget _buildValidationMetricsSummary(BulkImportProvider bulkProvider) {
-    return Row(
+    final int totalRecords = bulkProvider.totalApiRecords > 0
+        ? bulkProvider.totalApiRecords
+        : bulkProvider.totalRows;
+    final int totalRejected = bulkProvider.nonIndiaRejectedCount +
+        bulkProvider.invalidCoordCount +
+        bulkProvider.invalidRowsCount;
+
+    return Column(
       children: [
-        _buildMetricCard('Total CSV Rows', '${bulkProvider.totalRows}', HugeIcons.strokeRoundedDocumentCode, AppColors.primary),
-        const SizedBox(width: 12),
-        _buildMetricCard('Valid New', '${bulkProvider.validRowsCount}', HugeIcons.strokeRoundedCheckmarkCircle01, AppColors.secondary),
-        const SizedBox(width: 12),
-        _buildMetricCard('Duplicates', '${bulkProvider.duplicateRowsCount}', HugeIcons.strokeRoundedAlert02, AppColors.warning),
-        const SizedBox(width: 12),
-        _buildMetricCard('Invalid', '${bulkProvider.invalidRowsCount}', HugeIcons.strokeRoundedCancel01, AppColors.danger),
+        Row(
+          children: [
+            _buildMetricCard('Total Fetched', '$totalRecords', HugeIcons.strokeRoundedDocumentCode, AppColors.primary),
+            const SizedBox(width: 12),
+            _buildMetricCard('Valid India', '${bulkProvider.validRowsCount}', HugeIcons.strokeRoundedCheckmarkCircle01, AppColors.secondary),
+            const SizedBox(width: 12),
+            _buildMetricCard('Duplicates', '${bulkProvider.duplicateRowsCount}', HugeIcons.strokeRoundedAlert02, AppColors.warning),
+            const SizedBox(width: 12),
+            _buildMetricCard('Rejected/Invalid', '$totalRejected', HugeIcons.strokeRoundedCancel01, AppColors.danger),
+          ],
+        ),
+        if (bulkProvider.nonIndiaRejectedCount > 0 || bulkProvider.invalidCoordCount > 0) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Rejection Breakdown: ${bulkProvider.nonIndiaRejectedCount} Non-India records • ${bulkProvider.invalidCoordCount} Invalid Coordinates',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }

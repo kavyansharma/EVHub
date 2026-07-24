@@ -5,6 +5,20 @@ import '../core/constants/app_constants.dart';
 import '../models/map_marker_model.dart';
 import 'bulk_data_source.dart';
 
+class OcmFetchResult {
+  final List<MapMarkerModel> validChargers;
+  final int totalApiRecords;
+  final int nonIndiaRejectedCount;
+  final int invalidCoordCount;
+
+  const OcmFetchResult({
+    required this.validChargers,
+    required this.totalApiRecords,
+    required this.nonIndiaRejectedCount,
+    required this.invalidCoordCount,
+  });
+}
+
 /// Implements [BulkChargerDataSource] for Open Charge Map (OCM) API
 /// specifically targeting EV Charging Stations in India (`CountryCode=IN`).
 /// Official API Documentation: https://www.openchargemap.org/develop/api
@@ -30,6 +44,13 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
   Future<List<MapMarkerModel>> fetchChargers({
     Map<String, dynamic>? options,
   }) async {
+    final result = await fetchChargersWithStats(options: options);
+    return result.validChargers;
+  }
+
+  Future<OcmFetchResult> fetchChargersWithStats({
+    Map<String, dynamic>? options,
+  }) async {
     final apiKey = (options?['apiKey'] as String?)?.trim();
     final effectiveApiKey = (apiKey != null && apiKey.isNotEmpty)
         ? apiKey
@@ -39,6 +60,10 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
     final onProgress = options?['onProgress'] as void Function(int fetched, int page)?;
 
     final List<MapMarkerModel> allChargers = [];
+    int totalApiRecords = 0;
+    int nonIndiaRejectedCount = 0;
+    int invalidCoordCount = 0;
+
     const int pageSize = 100;
     int offset = 0;
     int pageIndex = 1;
@@ -72,7 +97,7 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
         response = await _client.get(uri).timeout(const Duration(seconds: 20));
       } catch (e) {
         debugPrint('[OpenChargeMapChargerDataSource] Network/Timeout Error: $e');
-        if (allChargers.isNotEmpty) break; // Return what we have fetched so far
+        if (allChargers.isNotEmpty) break;
         throw Exception('Network timeout connecting to Open Charge Map API ($e)');
       }
 
@@ -102,11 +127,22 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
         break;
       }
 
+      totalApiRecords += batchJson.length;
+
       for (final raw in batchJson) {
         if (raw is Map<String, dynamic>) {
-          final model = mapOcmJsonToModel(raw);
-          if (model != null) {
-            allChargers.add(model);
+          final String? rejectReason = getRejectionReason(raw);
+          if (rejectReason == 'non_india') {
+            nonIndiaRejectedCount++;
+          } else if (rejectReason == 'invalid_coords') {
+            invalidCoordCount++;
+          } else {
+            final model = mapOcmJsonToModel(raw);
+            if (model != null) {
+              allChargers.add(model);
+            } else {
+              invalidCoordCount++;
+            }
           }
         }
       }
@@ -116,18 +152,45 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
       }
 
       if (batchJson.length < batchSize) {
-        break; // Reached end of available API dataset
+        break;
       }
 
       offset += batchSize;
       pageIndex++;
 
-      // Small delay between page requests to respect API rate limits
       await Future.delayed(const Duration(milliseconds: 200));
     }
 
     debugPrint('[OpenChargeMapChargerDataSource] ✓ Total valid India chargers parsed: ${allChargers.length}');
-    return allChargers;
+    return OcmFetchResult(
+      validChargers: allChargers,
+      totalApiRecords: totalApiRecords,
+      nonIndiaRejectedCount: nonIndiaRejectedCount,
+      invalidCoordCount: invalidCoordCount,
+    );
+  }
+
+  /// Determines the specific rejection reason for a raw OCM record.
+  static String? getRejectionReason(Map<String, dynamic> raw) {
+    final addressInfo = raw['AddressInfo'] as Map<String, dynamic>?;
+    if (addressInfo == null) return 'invalid_coords';
+
+    final countryObj = addressInfo['Country'] as Map<String, dynamic>?;
+    if (countryObj != null) {
+      final iso = (countryObj['ISOCode'] as String?)?.trim().toUpperCase();
+      final countryTitle = (countryObj['Title'] as String?)?.trim().toLowerCase();
+      if (iso != null && iso.isNotEmpty && iso != 'IN') return 'non_india';
+      if (countryTitle != null && countryTitle.isNotEmpty && !countryTitle.contains('india')) return 'non_india';
+    }
+
+    final title = (addressInfo['Title'] as String?)?.trim() ?? '';
+    final lat = (addressInfo['Latitude'] as num?)?.toDouble();
+    final lng = (addressInfo['Longitude'] as num?)?.toDouble();
+
+    if (title.isEmpty || lat == null || lng == null) return 'invalid_coords';
+    if (lat < minLat || lat > maxLat || lng < minLng || lng > maxLng) return 'invalid_coords';
+
+    return null; // Valid
   }
 
   /// Maps an OCM raw POI JSON map into an EVHub [MapMarkerModel].
@@ -176,9 +239,11 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
     // Operator / Network Mapping
     final operatorInfo = raw['OperatorInfo'] as Map<String, dynamic>?;
     String network = 'Unknown Network';
+    String? rawOperatorTitle;
     if (operatorInfo != null) {
       final opTitle = (operatorInfo['Title'] as String?)?.trim();
       if (opTitle != null && opTitle.isNotEmpty && opTitle.toLowerCase() != '(unknown operator)') {
+        rawOperatorTitle = opTitle;
         network = _normalizeNetworkName(opTitle);
       }
     }
@@ -220,10 +285,12 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
     final isOperational = (statusType?['IsOperational'] as bool?) ?? true;
     final status = isOperational ? MarkerStatus.available : MarkerStatus.offline;
 
+    final effectiveNetworkName = (network == 'Unknown Network' && rawOperatorTitle != null) ? rawOperatorTitle : network;
+
     return MapMarkerModel(
       id: id,
       title: title,
-      description: address.isNotEmpty ? address : '$network Charger in $city, $state',
+      description: address.isNotEmpty ? address : '$effectiveNetworkName Charger in $city, $state',
       latitude: lat,
       longitude: lng,
       type: MarkerType.station,
