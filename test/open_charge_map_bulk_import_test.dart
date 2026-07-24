@@ -8,6 +8,7 @@ import 'package:evhub/models/user_model.dart';
 import 'package:evhub/providers/bulk_import_provider.dart';
 import 'package:evhub/providers/charger_data_dashboard_provider.dart';
 import 'package:evhub/repositories/firestore_charger_repository.dart';
+import 'package:evhub/services/bulk_data_source.dart';
 import 'package:evhub/services/csv_import_service.dart';
 import 'package:evhub/services/nrel_charger_data_source.dart';
 import 'package:evhub/services/open_charge_map_charger_data_source.dart';
@@ -366,7 +367,89 @@ Kazam Hub,Kazam,Indiranagar,Bengaluru,Karnataka,India,12.9784,77.6408,4,4,60kW''
       expect(results.length, equals(1));
       expect(results.first.parsedModel?.title, equals('Kazam Hub'));
     });
+
+    // ------------------------------------------------------------------------
+    // Phase 7.5B Production Sync & Job History Tests
+    // ------------------------------------------------------------------------
+    test('TEST 26: MapMarkerModel preserves Phase 7.5B production fields', () {
+      final now = DateTime.now().toIso8601String();
+      final model = MapMarkerModel(
+        id: 'ocm_99888',
+        title: 'Ather Fast Grid Koramangala',
+        description: 'Ather Grid Station',
+        latitude: 12.9352,
+        longitude: 77.6245,
+        type: MarkerType.station,
+        sourceId: 'ocm_99888',
+        lastSyncedAt: now,
+        lastSeenAt: now,
+        isStale: false,
+        dataConfidence: 'external_unverified',
+        originalOperatorTitle: 'Ather Energy India',
+        sourceUrl: 'https://openchargemap.org/site/poi/details/99888',
+      );
+
+      expect(model.sourceId, equals('ocm_99888'));
+      expect(model.lastSyncedAt, equals(now));
+      expect(model.isStale, isFalse);
+      expect(model.dataConfidence, equals('external_unverified'));
+      expect(model.originalOperatorTitle, equals('Ather Energy India'));
+    });
+
+    test('TEST 27: BulkImportProvider Dry-Run mode calculates stats without writes', () async {
+      final provider = BulkImportProvider();
+      final adminUser = UserModel(
+        id: 'admin_88',
+        name: 'Super Admin',
+        email: 'admin@evhub.com',
+        role: Role.admin,
+      );
+
+      provider.setDryRun(true);
+      expect(provider.isDryRun, isTrue);
+
+      final dummyCharger = MapMarkerModel(
+        id: 'ocm_7711',
+        title: 'Dummy India Hub',
+        description: 'Address',
+        latitude: 28.6139,
+        longitude: 77.2090,
+        type: MarkerType.station,
+        source: 'bulk_import',
+        isVerified: false,
+      );
+
+      // Simulate preview ready step
+      await provider.fetchFromOpenChargeMapApi(
+        existingChargers: [],
+        customDataSource: _MockSingleChargerSource(dummyCharger),
+      );
+
+      expect(provider.step, equals(BulkImportStep.previewReady));
+      expect(provider.chargersToImport.length, equals(1));
+
+      final success = await provider.executeImport(adminUser: adminUser);
+      expect(success, isTrue);
+      expect(provider.jobHistory.length, equals(1));
+      expect(provider.jobHistory.first.isDryRun, isTrue);
+      expect(provider.jobHistory.first.status, contains('dry_run'));
+    });
   });
+}
+
+class _MockSingleChargerSource implements BulkChargerDataSource {
+  final MapMarkerModel charger;
+  _MockSingleChargerSource(this.charger);
+
+  @override
+  String get sourceId => 'mock';
+  @override
+  String get sourceName => 'Mock Source';
+
+  @override
+  Future<List<MapMarkerModel>> fetchChargers({Map<String, dynamic>? options}) async {
+    return [charger];
+  }
 }
 
 class _MockFirestoreRepo implements FirestoreChargerRepository {

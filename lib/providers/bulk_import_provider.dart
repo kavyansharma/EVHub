@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import '../models/bulk_import_job_model.dart';
 import '../models/map_marker_model.dart';
 import '../models/user_model.dart';
 import '../services/bulk_data_source.dart';
@@ -50,10 +51,15 @@ class BulkImportProvider extends ChangeNotifier {
   int _skippedDuplicateCount = 0;
   int _progressCurrent = 0;
   int _progressTotal = 0;
-
   int _totalApiRecords = 0;
   int _nonIndiaRejectedCount = 0;
   int _invalidCoordCount = 0;
+
+  // Phase 7.5B Production-Grade Enhancements
+  bool _isDryRun = false;
+  bool _isSyncMode = true;
+  BulkImportJobModel? _activeJob;
+  final List<BulkImportJobModel> _jobHistory = [];
 
   // Getters
   BulkImportStep get step => _step;
@@ -68,6 +74,11 @@ class BulkImportProvider extends ChangeNotifier {
   String get importStrategy => _importStrategy;
   bool get isProcessing => _isProcessing;
   String? get errorMessage => _errorMessage;
+
+  bool get isDryRun => _isDryRun;
+  bool get isSyncMode => _isSyncMode;
+  BulkImportJobModel? get activeJob => _activeJob;
+  List<BulkImportJobModel> get jobHistory => List.unmodifiable(_jobHistory);
 
   int get totalApiRecords => _totalApiRecords;
   int get nonIndiaRejectedCount => _nonIndiaRejectedCount;
@@ -87,6 +98,16 @@ class BulkImportProvider extends ChangeNotifier {
       .where((r) => r.isValid && !r.isDuplicate && r.parsedModel != null)
       .map((r) => r.parsedModel!)
       .toList();
+
+  void setDryRun(bool val) {
+    _isDryRun = val;
+    notifyListeners();
+  }
+
+  void setSyncMode(bool val) {
+    _isSyncMode = val;
+    notifyListeners();
+  }
 
   void setSourceMode(ImportSourceMode mode) {
     _sourceMode = mode;
@@ -304,7 +325,7 @@ class BulkImportProvider extends ChangeNotifier {
     );
   }
 
-  /// Execute Firestore Batch Write Import
+  /// Execute Firestore Batch Write Import or Dry-Run Simulation
   Future<bool> executeImport({required UserModel adminUser}) async {
     if (!adminUser.isAdmin) {
       _errorMessage = 'Only administrators can perform bulk charger imports.';
@@ -319,6 +340,24 @@ class BulkImportProvider extends ChangeNotifier {
       return false;
     }
 
+    final String jobId = 'job_${DateTime.now().millisecondsSinceEpoch}';
+    final String nowIso = DateTime.now().toIso8601String();
+
+    _activeJob = BulkImportJobModel(
+      jobId: jobId,
+      startedAt: nowIso,
+      status: 'in_progress',
+      source: _sourceMode.name,
+      isDryRun: _isDryRun,
+      isSyncMode: _isSyncMode,
+      requestedCount: totalApiRecords > 0 ? totalApiRecords : totalRows,
+      processedCount: 0,
+      createdCount: toImport.length,
+      skippedCount: duplicateRowsCount,
+      errorCount: invalidRowsCount + nonIndiaRejectedCount + invalidCoordCount,
+      createdBy: adminUser.id,
+    );
+
     _isProcessing = true;
     _step = BulkImportStep.importing;
     _progressCurrent = 0;
@@ -327,6 +366,25 @@ class BulkImportProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_isDryRun) {
+        // DRY RUN: Simulate calculations without modifying Firestore
+        await Future.delayed(const Duration(milliseconds: 600));
+        _importedCount = toImport.length;
+
+        _activeJob = _activeJob?.copyWith(
+          completedAt: DateTime.now().toIso8601String(),
+          status: 'completed (dry_run)',
+          processedCount: toImport.length,
+          createdCount: toImport.length,
+        );
+        if (_activeJob != null) {
+          _jobHistory.insert(0, _activeJob!);
+        }
+
+        _step = BulkImportStep.complete;
+        return true;
+      }
+
       final int count = await _importService.performBatchImport(
         chargersToImport: toImport,
         adminUid: adminUser.id,
@@ -334,15 +392,35 @@ class BulkImportProvider extends ChangeNotifier {
         onProgress: (processed, total) {
           _progressCurrent = processed;
           _progressTotal = total;
+          _activeJob = _activeJob?.copyWith(processedCount: processed);
           notifyListeners();
         },
       );
 
       _importedCount = count;
+      _activeJob = _activeJob?.copyWith(
+        completedAt: DateTime.now().toIso8601String(),
+        status: 'completed',
+        processedCount: count,
+        createdCount: count,
+      );
+      if (_activeJob != null) {
+        _jobHistory.insert(0, _activeJob!);
+      }
+
       _step = BulkImportStep.complete;
       return true;
     } catch (e) {
-      _errorMessage = 'Import failed: ${e.toString().replaceAll("Exception: ", "")}';
+      final errMsg = e.toString().replaceAll("Exception: ", "");
+      _errorMessage = 'Import failed: $errMsg';
+      _activeJob = _activeJob?.copyWith(
+        completedAt: DateTime.now().toIso8601String(),
+        status: 'failed',
+        errorMessage: errMsg,
+      );
+      if (_activeJob != null) {
+        _jobHistory.insert(0, _activeJob!);
+      }
       _step = BulkImportStep.previewReady;
       return false;
     } finally {

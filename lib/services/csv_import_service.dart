@@ -337,8 +337,10 @@ class CsvImportService {
         ];
 
         for (final existing in candidates) {
-          // Check 1: External ID Match
-          if (charger.id.isNotEmpty && charger.id == existing.id) {
+          // Check 1: External ID / sourceId Match
+          final bool sameSourceId = (charger.sourceId != null && existing.sourceId != null && charger.sourceId == existing.sourceId);
+          final bool sameId = charger.id.isNotEmpty && charger.id == existing.id;
+          if (sameId || sameSourceId) {
             duplicateStatus = DuplicateClassification.exactDuplicate;
             duplicateMatch = existing;
             minDistanceMeters = 0.0;

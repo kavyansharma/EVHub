@@ -424,6 +424,62 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+
+          // Action Mode & Dry Run Toggles
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.sync_rounded, size: 18, color: AppColors.primary),
+                        SizedBox(width: 8),
+                        Text(
+                          'Incremental Sync Mode',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                    Switch(
+                      value: bulkProvider.isSyncMode,
+                      activeColor: AppColors.primary,
+                      onChanged: (val) => bulkProvider.setSyncMode(val),
+                    ),
+                  ],
+                ),
+                const Divider(color: Colors.white10, height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.science_rounded, size: 18, color: AppColors.secondary),
+                        SizedBox(width: 8),
+                        Text(
+                          'Dry Run Mode (Preview Writes Only)',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                    Switch(
+                      value: bulkProvider.isDryRun,
+                      activeColor: AppColors.secondary,
+                      onChanged: (val) => bulkProvider.setDryRun(val),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
 
           // Fetch Action Button
@@ -432,8 +488,10 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
             child: PremiumButton(
               text: bulkProvider.isProcessing && bulkProvider.step == BulkImportStep.parsing
                   ? 'Fetching & Validating India Chargers (${bulkProvider.progressCurrent})...'
-                  : 'Fetch India Chargers & Preview',
-              icon: Icons.travel_explore_rounded,
+                  : (bulkProvider.isDryRun
+                      ? 'Preview India Chargers (Dry Run)'
+                      : 'Fetch India Chargers & Preview'),
+              icon: bulkProvider.isDryRun ? Icons.science_rounded : Icons.travel_explore_rounded,
               isLoading: bulkProvider.isProcessing && bulkProvider.step == BulkImportStep.parsing,
               onPressed: () {
                 if (!bulkProvider.isProcessing) {
@@ -922,8 +980,10 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
           Expanded(
             flex: 2,
             child: PremiumButton(
-              text: 'Import ${bulkProvider.validRowsCount} New Chargers',
-              icon: Icons.upload_file_rounded,
+              text: bulkProvider.isDryRun
+                  ? 'Simulate Import (${bulkProvider.validRowsCount} Chargers)'
+                  : 'Import ${bulkProvider.validRowsCount} New Chargers',
+              icon: bulkProvider.isDryRun ? Icons.science_rounded : Icons.upload_file_rounded,
               isLoading: bulkProvider.isProcessing,
               onPressed: bulkProvider.validRowsCount == 0
                   ? () {}
@@ -932,18 +992,28 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
                             context: context,
                             builder: (ctx) => AlertDialog(
                               backgroundColor: AppColors.card,
-                              title: const Text('Confirm Bulk Import', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              title: Text(
+                                bulkProvider.isDryRun ? 'Confirm Dry Run Simulation' : 'Confirm Bulk Import',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
                               content: Text(
-                                'You are about to add ${bulkProvider.validRowsCount} new EVHub Verified chargers to Firestore. '
-                                '${bulkProvider.duplicateRowsCount} duplicates will be skipped. Proceed?',
+                                bulkProvider.isDryRun
+                                    ? 'You are about to simulate importing ${bulkProvider.validRowsCount} India chargers. No data will be written to Firestore.'
+                                    : 'You are about to add ${bulkProvider.validRowsCount} new chargers to Firestore. ${bulkProvider.duplicateRowsCount} duplicates will be skipped. Proceed?',
                                 style: const TextStyle(color: AppColors.textSecondary),
                               ),
                               actions: [
                                 TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                                 ElevatedButton(
-                                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.black),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: bulkProvider.isDryRun ? AppColors.secondary : AppColors.primary,
+                                    foregroundColor: Colors.black,
+                                  ),
                                   onPressed: () => Navigator.pop(ctx, true),
-                                  child: const Text('Confirm & Import', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  child: Text(
+                                    bulkProvider.isDryRun ? 'Run Simulation' : 'Confirm & Import',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
                                 ),
                               ],
                             ),

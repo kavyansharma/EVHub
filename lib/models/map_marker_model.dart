@@ -49,6 +49,15 @@ class MapMarkerModel {
   final dynamic createdAt;
   final dynamic updatedAt;
 
+  // Phase 7.5B Production-Grade Sync Enhancements
+  final String? sourceId;
+  final String? lastSyncedAt;
+  final String? lastSeenAt;
+  final bool isStale;
+  final String dataConfidence; // 'verified', 'external_unverified'
+  final String? originalOperatorTitle;
+  final String? sourceUrl;
+
   // Phase 8 Computed Helpers
   int get availableConnectorsCount {
     if (source == 'google_places' || !isVerified) return 0;
@@ -112,6 +121,13 @@ class MapMarkerModel {
     this.amenities,
     this.createdAt,
     this.updatedAt,
+    this.sourceId,
+    this.lastSyncedAt,
+    this.lastSeenAt,
+    this.isStale = false,
+    this.dataConfidence = 'external_unverified',
+    this.originalOperatorTitle,
+    this.sourceUrl,
   });
 
   MapMarkerModel copyWith({
@@ -154,6 +170,13 @@ class MapMarkerModel {
     List<String>? amenities,
     dynamic createdAt,
     dynamic updatedAt,
+    String? sourceId,
+    String? lastSyncedAt,
+    String? lastSeenAt,
+    bool? isStale,
+    String? dataConfidence,
+    String? originalOperatorTitle,
+    String? sourceUrl,
   }) {
     return MapMarkerModel(
       id: id ?? this.id,
@@ -195,6 +218,13 @@ class MapMarkerModel {
       amenities: amenities ?? this.amenities,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      sourceId: sourceId ?? this.sourceId,
+      lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      isStale: isStale ?? this.isStale,
+      dataConfidence: dataConfidence ?? this.dataConfidence,
+      originalOperatorTitle: originalOperatorTitle ?? this.originalOperatorTitle,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
     );
   }
 }

@@ -287,6 +287,9 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
 
     final effectiveNetworkName = (network == 'Unknown Network' && rawOperatorTitle != null) ? rawOperatorTitle : network;
 
+    final String nowIso = DateTime.now().toIso8601String();
+    final String ocmWebUrl = 'https://openchargemap.org/site/poi/details/$rawId';
+
     return MapMarkerModel(
       id: id,
       title: title,
@@ -310,8 +313,15 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
       verificationStatus: 'approved',
       phoneNumber: phone,
       website: website,
-      createdAt: DateTime.now().toIso8601String(),
-      updatedAt: DateTime.now().toIso8601String(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      sourceId: id,
+      lastSyncedAt: nowIso,
+      lastSeenAt: nowIso,
+      isStale: false,
+      dataConfidence: 'external_unverified',
+      originalOperatorTitle: rawOperatorTitle,
+      sourceUrl: ocmWebUrl,
     );
   }
 
