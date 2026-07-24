@@ -147,18 +147,23 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
+  Future<bool> logout() async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
       await _authRepository.logout();
-    } catch (e) {
-      debugPrint("Logout failed: $e");
-    } finally {
       _user = null;
       _isLoading = false;
       notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Logout failed: ${e.toString().replaceAll("Exception: ", "")}';
+      debugPrint("Logout failed: $e");
+      _isLoading = false;
+      notifyListeners();
+      return false;
     }
   }
 

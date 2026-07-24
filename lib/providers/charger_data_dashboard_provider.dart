@@ -605,4 +605,12 @@ class ChargerDataDashboardProvider extends ChangeNotifier {
     if (val is String) return DateTime.tryParse(val);
     return null;
   }
+
+  /// Reset dashboard provider state upon user logout
+  void clearDashboard() {
+    _chargers = [];
+    _isLoading = false;
+    _errorMessage = null;
+    notifyListeners();
+  }
 }

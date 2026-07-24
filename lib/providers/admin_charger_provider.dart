@@ -371,6 +371,17 @@ class AdminChargerProvider extends ChangeNotifier {
     }
   }
 
+  /// Reset admin provider state upon user logout
+  void clearState() {
+    _chargersSubscription?.cancel();
+    _allChargers = [];
+    _filteredChargers = [];
+    _errorMessage = null;
+    _successMessage = null;
+    _isLoading = false;
+    resetFilters();
+  }
+
   @override
   void dispose() {
     _chargersSubscription?.cancel();
