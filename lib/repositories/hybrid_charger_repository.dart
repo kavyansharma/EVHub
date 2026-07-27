@@ -119,6 +119,59 @@ class HybridChargerRepository {
     return finalChargers;
   }
 
+  /// Searches nearby chargers centered around [latitude] and [longitude].
+  /// Uses adaptive radius expansion starting at [initialRadiusKm] (default 25 km).
+  /// Expands through 50 km, 100 km, 250 km, and 500 km until chargers are found,
+  /// with an optional global India fallback if no chargers are nearby.
+  Future<List<MapMarkerModel>> searchNearbyChargers({
+    required double latitude,
+    required double longitude,
+    double initialRadiusKm = 25.0,
+    double maxRadiusKm = 500.0,
+    bool allowGlobalFallback = true,
+  }) async {
+    final List<double> radii = [initialRadiusKm, 50.0, 100.0, 250.0, maxRadiusKm];
+    List<MapMarkerModel> results = [];
+    double currentRadius = initialRadiusKm;
+
+    for (final r in radii) {
+      if (r < initialRadiusKm) continue;
+      currentRadius = r;
+      results = await getHybridChargers(
+        latitude: latitude,
+        longitude: longitude,
+        radiusKm: currentRadius,
+      );
+
+      debugPrint('[MAP-DIAGNOSTIC] Radius search at $currentRadius km returned ${results.length} chargers');
+      if (results.isNotEmpty) {
+        break;
+      }
+    }
+
+    // Global India Fallback: If still no chargers found within maxRadius, load all Firestore chargers sorted by distance
+    if (results.isEmpty && allowGlobalFallback) {
+      debugPrint('[MAP-DIAGNOSTIC] No chargers found within $maxRadiusKm km. Executing India-wide fallback...');
+      try {
+        final allFirebase = await _firestoreRepository.getPublicVerifiedChargers();
+        if (allFirebase.isNotEmpty) {
+          final List<_ChargerWithDistance> withDist = allFirebase.map((c) {
+            final distM = Geolocator.distanceBetween(latitude, longitude, c.latitude, c.longitude);
+            return _ChargerWithDistance(c.copyWith(distanceKm: distM / 1000.0), distM / 1000.0);
+          }).toList();
+
+          withDist.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+          results = withDist.map((e) => e.charger).toList();
+          debugPrint('[MAP-DIAGNOSTIC] Global India fallback loaded ${results.length} chargers across India');
+        }
+      } catch (e) {
+        debugPrint('[MAP-DIAGNOSTIC] Global fallback error: $e');
+      }
+    }
+
+    return results;
+  }
+
   /// Checks if two chargers are duplicates.
   /// Two chargers are considered duplicates when:
   /// 1. They have the same Google Place ID / ID, OR

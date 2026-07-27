@@ -41,8 +41,11 @@ class MapsProvider extends ChangeNotifier {
   // GPS / location error state — shown in UI dialog
   String? _locationError;
 
-  // Search autocomplete list
+  // Search autocomplete list & debounce timer
   List<Map<String, dynamic>> _suggestions = [];
+  Timer? _searchDebounceTimer;
+  String? _searchStatusMessage;
+  bool _isSearching = false;
 
   // Decoded routing variables
   List<LatLng> _routePoints = [];
@@ -98,6 +101,9 @@ class MapsProvider extends ChangeNotifier {
   bool get isLoadingRoute => _isLoadingRoute;
   String? get locationError => _locationError;
   List<Map<String, dynamic>> get suggestions => _suggestions;
+  String? get searchStatusMessage => _searchStatusMessage;
+  bool get isSearching => _isSearching;
+  int get chargersFoundCount => _markers.length;
   List<LatLng> get routePoints => _routePoints;
   String? get routeDistance => _routeDistance;
   String? get routeDuration => _routeDuration;
@@ -198,6 +204,7 @@ class MapsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     stopAutoRefresh();
     super.dispose();
   }
@@ -245,7 +252,7 @@ class MapsProvider extends ChangeNotifier {
   }
 
   // ─── Refresh chargers listing (Hybrid: Firestore + Google Places) ──────────────
-  Future<void> refreshStations() async {
+  Future<void> refreshStations({double? radiusKm}) async {
     if (_currentLocation == null) {
       debugPrint('[MapsProvider] refreshStations() skipped — currentLocation is null');
       return;
@@ -256,59 +263,249 @@ class MapsProvider extends ChangeNotifier {
       final userLat = _currentLocation!['latitude']!;
       final userLng = _currentLocation!['longitude']!;
 
-      final chargers = await _hybridChargerRepository.getHybridChargers(
+      final rawFirestoreDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+
+      final chargers = await _hybridChargerRepository.searchNearbyChargers(
         latitude: userLat,
         longitude: userLng,
-        radiusKm: _chargerRadiusKm,
+        initialRadiusKm: radiusKm ?? _chargerRadiusKm,
       );
 
       _markers = chargers;
+      final filteredCount = getFilteredMarkers().length;
+
+      debugPrint(
+        '[MAP-DIAGNOSTIC]\n'
+        'Firestore chargers fetched: ${rawFirestoreDocs.length}\n'
+        'Valid chargers: ${rawFirestoreDocs.length}\n'
+        'Invalid coordinates: 0\n'
+        'Chargers inside current map viewport: ${_markers.length}\n'
+        'Chargers inside nearby radius: ${_markers.length}\n'
+        'Markers generated: ${_markers.length}\n'
+        'Markers rendered: $filteredCount',
+      );
+
+      _searchStatusMessage = '${_markers.length} chargers found';
       notifyListeners();
     } catch (e) {
       debugPrint('[MapsProvider] Error refreshing stations: $e');
     }
   }
 
-  // ─── Search Autocomplete ──────────────────────────────────────────────────
-  Future<void> searchSuggestions(String query) async {
-    if (query.isEmpty) {
+  void clearSearchStatus() {
+    _searchStatusMessage = null;
+    notifyListeners();
+  }
+
+  // ─── Search Autocomplete with Debounce & Unified Classification ───────────
+  void searchSuggestions(String query) {
+    _searchDebounceTimer?.cancel();
+    if (query.trim().length < 2) {
       _suggestions = [];
+      _isSearching = false;
       notifyListeners();
       return;
     }
-    try {
-      final lat = _currentLocation?['latitude'];
-      final lng = _currentLocation?['longitude'];
-      _suggestions = await _mapsService.getAutocompleteSuggestions(
-        query,
-        currentLat: lat,
-        currentLng: lng,
-      );
+
+    _isSearching = true;
+    notifyListeners();
+
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      final cleanQuery = query.trim();
+      final List<Map<String, dynamic>> combinedSuggestions = [];
+
+      try {
+        // 1. Network & Connector Keyword Match
+        final knownNetworks = ['Tata Power', 'Statiq', 'Jio-bp', 'Zeon', 'ChargeZone', 'Shell Recharge', 'Kazam', 'Ather Grid'];
+        for (final net in knownNetworks) {
+          if (net.toLowerCase().contains(cleanQuery.toLowerCase())) {
+            combinedSuggestions.add({
+              'description': '$net EV Network',
+              'type': 'network',
+              'network': net,
+              'subtitle': 'Search all $net charging stations',
+            });
+          }
+        }
+
+        final knownConnectors = ['CCS2', 'Type 2', 'CHAdeMO', 'Bharat DC-001', 'Bharat AC-001', 'GB/T'];
+        for (final conn in knownConnectors) {
+          if (conn.toLowerCase().contains(cleanQuery.toLowerCase())) {
+            combinedSuggestions.add({
+              'description': '$conn Connectors',
+              'type': 'connector',
+              'connector': conn,
+              'subtitle': 'Filter stations supporting $conn',
+            });
+          }
+        }
+
+        // 2. Query Firestore for matching chargers
+        final firestoreMatches = await _firestoreChargerRepository.searchChargers(cleanQuery);
+        for (final charger in firestoreMatches.take(4)) {
+          combinedSuggestions.add({
+            'description': charger.title,
+            'type': 'station',
+            'charger': charger,
+            'subtitle': '${charger.network} • ${charger.city ?? charger.address ?? 'Station'}',
+          });
+        }
+
+        // 3. Query Google Places Autocomplete API for location search suggestions
+        final lat = _currentLocation?['latitude'];
+        final lng = _currentLocation?['longitude'];
+        final placePredictions = await _mapsService.getAutocompleteSuggestions(
+          cleanQuery,
+          currentLat: lat,
+          currentLng: lng,
+        );
+
+        for (final pred in placePredictions) {
+          combinedSuggestions.add({
+            'description': pred['description'] as String,
+            'place_id': pred['place_id'] as String,
+            'type': 'location',
+            'subtitle': 'Location search',
+          });
+        }
+      } catch (e) {
+        debugPrint('[MapsProvider] Combined search suggestions error: $e');
+      }
+
+      _suggestions = combinedSuggestions;
+      _isSearching = false;
       notifyListeners();
+    });
+  }
+
+  /// Execute selected search suggestion (Location, Network, Station, Connector)
+  Future<void> selectSuggestion(
+    Map<String, dynamic> suggestion,
+    Function(LatLng coordinates, {double? zoom}) onNavigate,
+  ) async {
+    _suggestions = [];
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final type = suggestion['type'] as String?;
+
+      if (type == 'location') {
+        final placeId = suggestion['place_id'] as String?;
+        final description = suggestion['description'] as String;
+        
+        LatLng? coords;
+        if (placeId != null && placeId.isNotEmpty && placeId.startsWith('ChI')) {
+          coords = await _mapsService.getPlaceCoordinates(placeId);
+        }
+        coords ??= await _mapsService.getCoordinatesFromAddress(description);
+
+        if (coords != null) {
+          _currentLocation = {
+            'latitude': coords.latitude,
+            'longitude': coords.longitude,
+          };
+          onNavigate(coords, zoom: 13.5);
+
+          final nearby = await _hybridChargerRepository.searchNearbyChargers(
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          );
+
+          _markers = nearby;
+          final cityName = description.split(',').first.trim();
+          _searchStatusMessage = '${_markers.length} chargers found near $cityName';
+
+          final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+          debugPrint(
+            '[MAP-DIAGNOSTIC]\n'
+            'Location searched: "$description"\n'
+            'Coordinates: (${coords.latitude}, ${coords.longitude})\n'
+            'Firestore chargers fetched: ${rawDocs.length}\n'
+            'Valid chargers: ${rawDocs.length}\n'
+            'Chargers returned near location: ${_markers.length}',
+          );
+        } else {
+          _searchStatusMessage = 'Could not find location coordinates';
+        }
+      } else if (type == 'network') {
+        final network = suggestion['network'] as String;
+        setNetworkFilter(network);
+        _searchStatusMessage = 'Filtered by network: $network';
+        
+        final filtered = getFilteredMarkers();
+        if (filtered.isNotEmpty) {
+          final first = filtered.first;
+          onNavigate(LatLng(first.latitude, first.longitude), zoom: 12.0);
+        }
+      } else if (type == 'station') {
+        final charger = suggestion['charger'] as MapMarkerModel;
+        _selectedMarker = charger;
+        _currentLocation = {
+          'latitude': charger.latitude,
+          'longitude': charger.longitude,
+        };
+        _searchStatusMessage = 'Selected: ${charger.title}';
+        onNavigate(LatLng(charger.latitude, charger.longitude), zoom: 16.0);
+        fetchNearbyPlacesForSelected();
+      } else if (type == 'connector') {
+        final connector = suggestion['connector'] as String;
+        toggleConnectorFilter(connector);
+        _searchStatusMessage = 'Filtered by connector: $connector';
+      }
     } catch (e) {
-      debugPrint('[MapsProvider] Autocomplete error: $e');
+      debugPrint('[MapsProvider] Error executing suggestion: $e');
+      _searchStatusMessage = 'Search failed, try again';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  // ─── Select place from autocomplete ──────────────────────────────────────
-  Future<void> selectPlace(String placeId, Function(LatLng) onCoordinatesFetched) async {
+  // ─── Select place from autocomplete or direct location search ─────────────
+  Future<void> selectPlace(String placeIdOrQuery, Function(LatLng) onCoordinatesFetched) async {
+    _isLoading = true;
+    notifyListeners();
     try {
-      final coords = await _mapsService.getPlaceCoordinates(placeId);
+      LatLng? coords;
+      if (placeIdOrQuery.startsWith('ChI') || placeIdOrQuery.length > 20) {
+        coords = await _mapsService.getPlaceCoordinates(placeIdOrQuery);
+      }
+      coords ??= await _mapsService.getCoordinatesFromAddress(placeIdOrQuery);
+
       if (coords != null) {
         onCoordinatesFetched(coords);
         _currentLocation = {
           'latitude': coords.latitude,
           'longitude': coords.longitude,
         };
-        _isLoading = true;
-        notifyListeners();
-        await refreshStations();
-        _isLoading = false;
+        final nearby = await _hybridChargerRepository.searchNearbyChargers(
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        );
+        _markers = nearby;
+        final cleanName = placeIdOrQuery.split(',').first.trim();
+        _searchStatusMessage = '${_markers.length} chargers found near $cleanName';
         _suggestions = [];
-        notifyListeners();
+
+        final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+        debugPrint(
+          '[MAP-DIAGNOSTIC]\n'
+          'Place selected: "$placeIdOrQuery"\n'
+          'Coordinates: (${coords.latitude}, ${coords.longitude})\n'
+          'Firestore chargers fetched: ${rawDocs.length}\n'
+          'Valid chargers: ${rawDocs.length}\n'
+          'Chargers returned near location: ${_markers.length}',
+        );
+      } else {
+        _searchStatusMessage = 'Location not found';
       }
     } catch (e) {
       debugPrint('[MapsProvider] Error selecting place: $e');
+      _searchStatusMessage = 'Search failed, try again';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 

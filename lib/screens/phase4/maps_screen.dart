@@ -362,8 +362,8 @@ class _MapsScreenState extends State<MapsScreen> {
               ),
             ),
 
-          // "No chargers nearby" empty state — shown only when fully loaded and empty
-          if (!mapsProvider.isLoading && mapsProvider.markers.isEmpty)
+          // "No chargers nearby" empty state — shown only when fully loaded, empty, and not searching
+          if (!mapsProvider.isLoading && !mapsProvider.isSearching && mapsProvider.getFilteredMarkers().isEmpty)
             Positioned(
               bottom: 100,
               left: 24,
@@ -393,7 +393,7 @@ class _MapsScreenState extends State<MapsScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Try searching for a different area or expand the search radius.',
+                            'Try searching for a city (e.g. Delhi, Bengaluru, Chennai) or clearing active filters.',
                             style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
                           ),
                         ],
@@ -419,11 +419,18 @@ class _MapsScreenState extends State<MapsScreen> {
                     animateBorder: true,
                     child: Row(
                       children: [
-                        const HugeIcon(
-                          icon: HugeIcons.strokeRoundedSearch01,
-                          color: AppColors.primary,
-                          size: 20,
-                        ),
+                        if (mapsProvider.isSearching)
+                          const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                          )
+                        else
+                          const HugeIcon(
+                            icon: HugeIcons.strokeRoundedSearch01,
+                            color: AppColors.primary,
+                            size: 20,
+                          ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: TextField(
@@ -442,6 +449,18 @@ class _MapsScreenState extends State<MapsScreen> {
                             onChanged: (val) {
                               mapsProvider.searchSuggestions(val);
                             },
+                            onSubmitted: (val) {
+                              if (val.trim().isNotEmpty) {
+                                _searchFocusNode.unfocus();
+                                mapsProvider.selectPlace(val.trim(), (latLng) {
+                                  _mapController?.animateCamera(
+                                    CameraUpdate.newCameraPosition(
+                                      CameraPosition(target: latLng, zoom: 14.0),
+                                    ),
+                                  );
+                                });
+                              }
+                            },
                           ),
                         ),
                         if (_searchController.text.isNotEmpty)
@@ -450,6 +469,8 @@ class _MapsScreenState extends State<MapsScreen> {
                             onPressed: () {
                               _searchController.clear();
                               mapsProvider.searchSuggestions('');
+                              mapsProvider.clearSearchStatus();
+                              mapsProvider.refreshStations();
                             },
                           ),
                         Container(
@@ -474,7 +495,7 @@ class _MapsScreenState extends State<MapsScreen> {
                   if (_isSuggestionsVisible && mapsProvider.suggestions.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
-                      constraints: const BoxConstraints(maxHeight: 250),
+                      constraints: const BoxConstraints(maxHeight: 280),
                       child: GlassContainer(
                         borderRadius: 24,
                         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
@@ -485,27 +506,75 @@ class _MapsScreenState extends State<MapsScreen> {
                           itemCount: mapsProvider.suggestions.length,
                           itemBuilder: (context, idx) {
                             final sug = mapsProvider.suggestions[idx];
+                            final type = sug['type'] as String? ?? 'location';
+                            
+                            IconData leadingIcon;
+                            Color iconColor;
+                            if (type == 'network') {
+                              leadingIcon = Icons.ev_station;
+                              iconColor = AppColors.primary;
+                            } else if (type == 'station') {
+                              leadingIcon = Icons.electric_car;
+                              iconColor = const Color(0xFF10B981);
+                            } else if (type == 'connector') {
+                              leadingIcon = Icons.power;
+                              iconColor = const Color(0xFFF59E0B);
+                            } else {
+                              leadingIcon = Icons.location_on_outlined;
+                              iconColor = AppColors.primary;
+                            }
+
                             return ListTile(
-                              leading: const Icon(Icons.location_on_outlined, color: AppColors.primary, size: 18),
+                              leading: Icon(leadingIcon, color: iconColor, size: 20),
                               title: Text(
                                 sug['description'] as String,
-                                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
+                              subtitle: sug['subtitle'] != null
+                                  ? Text(
+                                      sug['subtitle'] as String,
+                                      style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    )
+                                  : null,
                               onTap: () {
                                 _searchFocusNode.unfocus();
                                 _searchController.text = sug['description'] as String;
-                                mapsProvider.selectPlace(sug['place_id'] as String, (latLng) {
+                                mapsProvider.selectSuggestion(sug, (latLng, {zoom}) {
                                   _mapController?.animateCamera(
                                     CameraUpdate.newCameraPosition(
-                                      CameraPosition(target: latLng, zoom: 15.0),
+                                      CameraPosition(target: latLng, zoom: zoom ?? 14.5),
                                     ),
                                   );
                                 });
                               },
                             );
                           },
+                        ),
+                      ),
+                    )
+                  else if (_isSuggestionsVisible &&
+                      _searchController.text.trim().length >= 2 &&
+                      !mapsProvider.isSearching &&
+                      mapsProvider.suggestions.isEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      child: GlassContainer(
+                        borderRadius: 20,
+                        padding: const EdgeInsets.all(12),
+                        animateBorder: false,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Colors.grey, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              'No results found for "${_searchController.text.trim()}"',
+                              style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -545,6 +614,40 @@ class _MapsScreenState extends State<MapsScreen> {
                       ],
                     ),
                   ),
+
+                  // Search Feedback Status Toast
+                  if (mapsProvider.searchStatusMessage != null)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1D2E).withOpacity(0.92),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_circle_outline, color: AppColors.primary, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              mapsProvider.searchStatusMessage!,
+                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => mapsProvider.clearSearchStatus(),
+                            child: const Icon(Icons.close, color: Colors.grey, size: 14),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1041,6 +1144,42 @@ class _MapsScreenState extends State<MapsScreen> {
                               color: Colors.black,
                               fontWeight: FontWeight.bold,
                               fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // View Full Charger Details Action
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: m)),
+                    );
+                  },
+                  child: Container(
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: Center(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.white70, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'View Full Charger Details',
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
                             ),
                           ),
                         ],

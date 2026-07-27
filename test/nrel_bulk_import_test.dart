@@ -329,6 +329,9 @@ class _MockFirestoreRepo implements FirestoreChargerRepository {
   Stream<List<MapMarkerModel>> streamPublicVerifiedChargers() => Stream.value([]);
 
   @override
+  Future<List<MapMarkerModel>> searchChargers(String query) async => [];
+
+  @override
   Future<void> approveCharger(String id, String adminUid) async {}
 
   @override

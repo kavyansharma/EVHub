@@ -238,10 +238,34 @@ class FirestoreChargerRepository {
       return snapshot.docs
           .map((doc) => _documentToModel(doc.id, doc.data()))
           .whereType<MapMarkerModel>()
-          .where((c) => c.isVerified && c.verificationStatus == 'approved')
+          .where((c) => c.isVerified || c.verificationStatus == 'approved')
           .toList();
     } catch (e) {
       debugPrint('[FirestoreChargerRepository] Error in getPublicVerifiedChargers: $e');
+      return [];
+    }
+  }
+
+  /// Searches public chargers by normalized keyword matching against title,
+  /// network, city, state, connectorTypes, and address.
+  Future<List<MapMarkerModel>> searchChargers(String query) async {
+    final cleanQuery = query.trim().toLowerCase();
+    if (cleanQuery.isEmpty) return [];
+
+    try {
+      final allChargers = await getPublicVerifiedChargers();
+      return allChargers.where((charger) {
+        final titleMatch = charger.title.toLowerCase().contains(cleanQuery);
+        final networkMatch = charger.network.toLowerCase().contains(cleanQuery);
+        final cityMatch = charger.city?.toLowerCase().contains(cleanQuery) ?? false;
+        final stateMatch = charger.state?.toLowerCase().contains(cleanQuery) ?? false;
+        final addressMatch = charger.address?.toLowerCase().contains(cleanQuery) ?? false;
+        final connectorMatch = charger.connectors.any((c) => c.toLowerCase().contains(cleanQuery));
+
+        return titleMatch || networkMatch || cityMatch || stateMatch || addressMatch || connectorMatch;
+      }).toList();
+    } catch (e) {
+      debugPrint('[FirestoreChargerRepository] Search error: $e');
       return [];
     }
   }
@@ -310,7 +334,7 @@ class FirestoreChargerRepository {
       return snapshot.docs
           .map((doc) => _documentToModel(doc.id, doc.data()))
           .whereType<MapMarkerModel>()
-          .where((c) => c.isVerified && c.verificationStatus == 'approved')
+          .where((c) => c.isVerified || c.verificationStatus == 'approved')
           .toList();
     });
   }
@@ -380,26 +404,54 @@ class FirestoreChargerRepository {
           ? data['id'] as String
           : docId;
 
-      final String name = (data['name'] as String?) ?? 'Unknown Charger';
-      final String address = (data['address'] as String?) ?? 'Address not available';
+      final String name = (data['name'] as String?) ?? (data['title'] as String?) ?? 'Unknown Charger';
+      final String address = (data['address'] as String?) ?? (data['description'] as String?) ?? 'Address not available';
       final String network = (data['network'] as String?) ?? 'Independent';
 
-      double latitude = 28.6304;
-      double longitude = 77.2177;
+      double? latitude;
+      double? longitude;
+
+      // 1. Check GeoPoint in 'location'
       final dynamic locationField = data['location'];
       if (locationField is GeoPoint) {
         latitude = locationField.latitude;
         longitude = locationField.longitude;
+      } else if (locationField is Map) {
+        latitude = (locationField['latitude'] as num?)?.toDouble() ??
+            (locationField['lat'] as num?)?.toDouble() ??
+            double.tryParse(locationField['latitude']?.toString() ?? '') ??
+            double.tryParse(locationField['lat']?.toString() ?? '');
+        longitude = (locationField['longitude'] as num?)?.toDouble() ??
+            (locationField['lng'] as num?)?.toDouble() ??
+            double.tryParse(locationField['longitude']?.toString() ?? '') ??
+            double.tryParse(locationField['lng']?.toString() ?? '');
+      }
+
+      // 2. Fallback to top-level latitude/longitude or lat/lng
+      latitude ??= (data['latitude'] as num?)?.toDouble() ??
+          (data['lat'] as num?)?.toDouble() ??
+          double.tryParse(data['latitude']?.toString() ?? '') ??
+          double.tryParse(data['lat']?.toString() ?? '');
+
+      longitude ??= (data['longitude'] as num?)?.toDouble() ??
+          (data['lng'] as num?)?.toDouble() ??
+          double.tryParse(data['longitude']?.toString() ?? '') ??
+          double.tryParse(data['lng']?.toString() ?? '');
+
+      // Reject document if valid coordinates cannot be extracted or fall outside valid range
+      if (latitude == null || longitude == null || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+        debugPrint('[MAP-DIAGNOSTIC] Invalid or missing coordinates for docId="$docId": lat=$latitude, lng=$longitude');
+        return null;
       }
 
       final double rating = (data['rating'] as num?)?.toDouble() ?? 4.5;
       final String power = (data['power'] as String?) ?? '50kW';
-      final String price = (data['pricePerUnit'] as String?) ?? '₹21/kWh';
+      final String price = (data['pricePerUnit'] as String?) ?? (data['price'] as String?) ?? '₹21/kWh';
 
       final String? rawStatus = data['status'] as String?;
       final MarkerStatus status = _parseStatus(rawStatus);
 
-      final int? rawTotal = (data['totalConnectors'] as num?)?.toInt();
+      final int? rawTotal = (data['totalConnectors'] as num?)?.toInt() ?? (data['connectorCount'] as num?)?.toInt();
       final int? rawAvailable = (data['availableConnectors'] as num?)?.toInt();
       final int totalConnectors = rawTotal ?? 4;
       final int availableConnectors = rawAvailable ?? totalConnectors;
@@ -421,9 +473,12 @@ class FirestoreChargerRepository {
         lastUpdated = rawUpdatedAt;
       }
 
-      final String? imageUrl = data['imageUrl'] as String?;
+      final String? imageUrl = (data['imageUrl'] as String?) ?? (data['photoUrl'] as String?);
       final List<String> connectorTypes =
           (data['connectorTypes'] as List<dynamic>?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              (data['connectors'] as List<dynamic>?)
                   ?.map((e) => e.toString())
                   .toList() ??
               ['CCS2', 'Type 2'];

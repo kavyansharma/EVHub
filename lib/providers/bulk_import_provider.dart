@@ -33,6 +33,7 @@ class BulkImportProvider extends ChangeNotifier {
   // Open Charge Map Options
   int _ocmLimit = 250;
   String _customOcmApiKey = '';
+  bool _useDevDirectMode = false;
 
   // NREL API Options
   String _selectedState = 'ALL';
@@ -68,6 +69,7 @@ class BulkImportProvider extends ChangeNotifier {
   ImportSourceMode get sourceMode => _sourceMode;
   int get ocmLimit => _ocmLimit;
   String get customOcmApiKey => _customOcmApiKey;
+  bool get useDevDirectMode => _useDevDirectMode;
   String get selectedState => _selectedState;
   int get apiLimit => _apiLimit;
   String get customApiKey => _customApiKey;
@@ -123,6 +125,11 @@ class BulkImportProvider extends ChangeNotifier {
 
   void setCustomOcmApiKey(String key) {
     _customOcmApiKey = key;
+    notifyListeners();
+  }
+
+  void setUseDevDirectMode(bool val) {
+    _useDevDirectMode = val;
     notifyListeners();
   }
 
@@ -184,6 +191,7 @@ class BulkImportProvider extends ChangeNotifier {
 
       if (dataSource is OcmApiService) {
         final statsResult = await dataSource.fetchChargersWithStats(options: {
+          'useDirectMode': _useDevDirectMode,
           'apiKey': _customOcmApiKey.isNotEmpty ? _customOcmApiKey : null,
           'limit': _ocmLimit,
           'onProgress': (count, page) {

@@ -26,8 +26,12 @@ const OCM_BASE_URL = "https://api.openchargemap.io/v3/poi/";
 exports.ocmProxy = functions
   .runWith({ secrets: ["OPEN_CHARGE_MAP_API_KEY"] })
   .https.onCall(async (data, context) => {
+    const correlationId = data.correlationId || `ocm-req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    functions.logger.info(`[OCM Proxy] Request received | CorrelationID: ${correlationId}`);
+
     // 1. Verify User Authentication (HTTP 401 equivalent)
     if (!context.auth || !context.auth.uid) {
+      functions.logger.warn(`[OCM Proxy] Unauthenticated request | CorrelationID: ${correlationId}`);
       throw new functions.https.HttpsError(
         "unauthenticated",
         "Authentication is required to access Open Charge Map API."
@@ -35,10 +39,15 @@ exports.ocmProxy = functions
     }
 
     const uid = context.auth.uid;
+    functions.logger.info(`[OCM Proxy] Authenticated UID: ${uid} | CorrelationID: ${correlationId}`);
 
     // 2. Server-Side Admin Role Authorization Check (HTTP 403 equivalent)
     const userDoc = await admin.firestore().collection("users").doc(uid).get();
-    if (!userDoc.exists || userDoc.data().role !== "admin") {
+    const isAdmin = userDoc.exists && userDoc.data().role === "admin";
+    functions.logger.info(`[OCM Proxy] Admin authorization result: ${isAdmin} | CorrelationID: ${correlationId}`);
+
+    if (!isAdmin) {
+      functions.logger.warn(`[OCM Proxy] Forbidden request for UID: ${uid} | CorrelationID: ${correlationId}`);
       throw new functions.https.HttpsError(
         "permission-denied",
         "Access denied. Only EVHub administrators can invoke OCM import operations."
@@ -52,7 +61,14 @@ exports.ocmProxy = functions
     const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
 
     // 4. Retrieve Secret API Key from Firebase Secret Manager
-    const apiKey = process.env.OPEN_CHARGE_MAP_API_KEY || "PUBLIC_DEMO_KEY";
+    const apiKey = process.env.OPEN_CHARGE_MAP_API_KEY;
+    if (!apiKey || apiKey.trim() === "" || apiKey === "PUBLIC_DEMO_KEY") {
+      functions.logger.error(`[OCM Proxy] OPEN_CHARGE_MAP_API_KEY secret missing in Secret Manager | CorrelationID: ${correlationId}`);
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "OPEN_CHARGE_MAP_API_KEY secret is not configured in Firebase Secret Manager."
+      );
+    }
 
     const queryParams = {
       output: "json",
@@ -64,6 +80,8 @@ exports.ocmProxy = functions
       key: apiKey,
     };
 
+    functions.logger.info(`[OCM Proxy] OCM API request initiated | Limit: ${limit}, Offset: ${offset} | CorrelationID: ${correlationId}`);
+
     try {
       // Hardcoded URL prevents arbitrary forwarding / SSRF
       const ocmResponse = await axios.get(OCM_BASE_URL, {
@@ -71,6 +89,8 @@ exports.ocmProxy = functions
         timeout: 25000,
         headers: { "Accept-Encoding": "gzip,deflate,compress" },
       });
+
+      functions.logger.info(`[OCM Proxy] OCM response status: ${ocmResponse.status} | CorrelationID: ${correlationId}`);
 
       const batchJson = Array.isArray(ocmResponse.data) ? ocmResponse.data : [];
 
@@ -112,8 +132,11 @@ exports.ocmProxy = functions
         sanitizedChargers.push(raw);
       }
 
+      functions.logger.info(`[OCM Proxy] OCM records summary | Total: ${totalApiRecords}, Valid: ${validIndiaRecords}, NonIndiaRejected: ${nonIndiaRejectedCount}, InvalidCoords: ${invalidCoordCount} | CorrelationID: ${correlationId}`);
+
       return {
         status: "success",
+        correlationId,
         totalApiRecords,
         validIndiaRecords,
         nonIndiaRejectedCount,
@@ -121,12 +144,22 @@ exports.ocmProxy = functions
         chargers: sanitizedChargers,
       };
     } catch (error) {
-      if (error.response && error.response.status === 429) {
-        throw new functions.https.HttpsError(
-          "resource-exhausted",
-          "Open Charge Map rate limit exceeded (HTTP 429). Please try again later."
-        );
+      if (error.response) {
+        functions.logger.error(`[OCM Proxy] OCM API returned error HTTP ${error.response.status} | CorrelationID: ${correlationId}`);
+        if (error.response.status === 401 || error.response.status === 403) {
+          throw new functions.https.HttpsError(
+            "unauthenticated",
+            "Invalid Open Charge Map API key configured in Secret Manager."
+          );
+        }
+        if (error.response.status === 429) {
+          throw new functions.https.HttpsError(
+            "resource-exhausted",
+            "Open Charge Map rate limit exceeded (HTTP 429). Please try again later."
+          );
+        }
       }
+      functions.logger.error(`[OCM Proxy] OCM Proxy internal error: ${error.message} | CorrelationID: ${correlationId}`);
       throw new functions.https.HttpsError(
         "internal",
         `Failed to fetch from Open Charge Map API: ${error.message}`

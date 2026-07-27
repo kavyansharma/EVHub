@@ -106,6 +106,75 @@ class MapsService {
     return null;
   }
 
+  static final Map<String, LatLng> _cityCoordinatesLookup = {
+    'delhi': const LatLng(28.6139, 77.2090),
+    'new delhi': const LatLng(28.6139, 77.2090),
+    'connaught place': const LatLng(28.6304, 77.2177),
+    'gurugram': const LatLng(28.4595, 77.0266),
+    'gurgaon': const LatLng(28.4595, 77.0266),
+    'noida': const LatLng(28.5355, 77.3910),
+    'bengaluru': const LatLng(12.9716, 77.5946),
+    'bangalore': const LatLng(12.9716, 77.5946),
+    'chennai': const LatLng(13.0827, 80.2707),
+    'mumbai': const LatLng(19.0760, 72.8777),
+    'hyderabad': const LatLng(17.3850, 78.4867),
+    'pune': const LatLng(18.5204, 73.8567),
+    'kolkata': const LatLng(22.5726, 88.3639),
+    'ahmedabad': const LatLng(23.0225, 72.5714),
+    'jaipur': const LatLng(26.9124, 75.7873),
+    'surat': const LatLng(21.1702, 72.8311),
+    'kochi': const LatLng(9.9312, 76.2673),
+    'coimbatore': const LatLng(11.0168, 76.9558),
+    'chandigarh': const LatLng(30.7333, 76.7794),
+  };
+
+  // Fetch coordinates using Google Geocoding API with robust Indian City Fallback
+  Future<LatLng?> getCoordinatesFromAddress(String address) async {
+    final cleanQuery = address.trim().toLowerCase();
+    if (cleanQuery.isEmpty) return null;
+
+    // 1. Direct dictionary check for known Indian cities & hubs
+    for (final entry in _cityCoordinatesLookup.entries) {
+      if (cleanQuery == entry.key || cleanQuery.contains(entry.key)) {
+        debugPrint('[MapsService] Found city match in local geocode index: "${entry.key}" -> ${entry.value}');
+        return entry.value;
+      }
+    }
+
+    final queryParams = {
+      'address': address,
+      'key': _apiKey,
+    };
+    final url = _buildUri('/maps/api/geocode/json', queryParams);
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final results = data['results'] as List<dynamic>?;
+        if (results != null && results.isNotEmpty) {
+          final loc = results[0]['geometry']?['location'];
+          if (loc != null) {
+            final lat = (loc['lat'] as num).toDouble();
+            final lng = (loc['lng'] as num).toDouble();
+            return LatLng(lat, lng);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Geocoding API error: $e");
+    }
+
+    // 2. Secondary fuzzy check if API call failed
+    for (final entry in _cityCoordinatesLookup.entries) {
+      if (entry.key.contains(cleanQuery) || cleanQuery.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+
+    return null;
+  }
+
   // 3. Google Directions API
   Future<Map<String, dynamic>?> getDirections(LatLng origin, LatLng dest) async {
     final queryParams = {

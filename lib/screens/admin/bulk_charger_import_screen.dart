@@ -393,41 +393,66 @@ class _BulkChargerImportScreenState extends State<BulkChargerImportScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Custom OCM API Key (Optional)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Open Charge Map API Key (Development / Demo Only)',
-                style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 2),
-              const Text(
-                'Production environment proxies API calls via Firebase Cloud Functions using Secrets Manager.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                onChanged: (val) => bulkProvider.setCustomOcmApiKey(val),
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'Paste dev OCM API Key here...',
-                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.06),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          // Production Security Proxy Banner
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.secondary.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.secondary.withOpacity(0.4)),
+            ),
+            child: Row(
+              children: const [
+                Icon(Icons.shield_outlined, color: AppColors.secondary, size: 20),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Production API requests are securely proxied through Firebase Cloud Functions.',
+                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Optional Development / Direct API Mode toggle
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Direct API Call (Development / Demo Mode)',
+                style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              Switch(
+                value: bulkProvider.useDevDirectMode,
+                activeColor: AppColors.warning,
+                onChanged: (val) => bulkProvider.setUseDevDirectMode(val),
               ),
             ],
           ),
+          if (bulkProvider.useDevDirectMode) ...[
+            const SizedBox(height: 6),
+            TextField(
+              onChanged: (val) => bulkProvider.setCustomOcmApiKey(val),
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Paste optional dev OCM API Key here...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.06),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Action Mode & Dry Run Toggles
