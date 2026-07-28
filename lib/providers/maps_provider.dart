@@ -393,19 +393,33 @@ class MapsProvider extends ChangeNotifier {
       if (type == 'location') {
         final placeId = suggestion['place_id'] as String?;
         final description = suggestion['description'] as String;
-        
+        final rawLat = suggestion['latitude'];
+        final rawLng = suggestion['longitude'];
+
         LatLng? coords;
-        if (placeId != null && placeId.isNotEmpty && placeId.startsWith('ChI')) {
+        if (rawLat is num && rawLng is num) {
+          coords = LatLng(rawLat.toDouble(), rawLng.toDouble());
+        } else if (placeId != null && placeId.isNotEmpty && placeId.startsWith('ChI')) {
           coords = await _mapsService.getPlaceCoordinates(placeId);
         }
         coords ??= await _mapsService.getCoordinatesFromAddress(description);
 
         if (coords != null) {
+          final cityName = description.split(',').first.trim();
           _currentLocation = {
             'latitude': coords.latitude,
             'longitude': coords.longitude,
           };
-          onNavigate(coords, zoom: 13.5);
+
+          onNavigate(coords, zoom: 12.0);
+
+          debugPrint(
+            '[MAP-SEARCH-DIAGNOSTIC]\n'
+            'Selected location: $cityName\n'
+            'Latitude: ${coords.latitude}\n'
+            'Longitude: ${coords.longitude}\n'
+            'Camera moved: true',
+          );
 
           final nearby = await _hybridChargerRepository.searchNearbyChargers(
             latitude: coords.latitude,
@@ -413,20 +427,25 @@ class MapsProvider extends ChangeNotifier {
           );
 
           _markers = nearby;
-          final cityName = description.split(',').first.trim();
-          _searchStatusMessage = '${_markers.length} chargers found near $cityName';
-
           final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+
           debugPrint(
-            '[MAP-DIAGNOSTIC]\n'
-            'Location searched: "$description"\n'
-            'Coordinates: (${coords.latitude}, ${coords.longitude})\n'
-            'Firestore chargers fetched: ${rawDocs.length}\n'
-            'Valid chargers: ${rawDocs.length}\n'
-            'Chargers returned near location: ${_markers.length}',
+            '[CHARGER-SEARCH-DIAGNOSTIC]\n'
+            'Search location: $cityName\n'
+            'Coordinates: ${coords.latitude}, ${coords.longitude}\n'
+            'Firestore records fetched: ${rawDocs.length}\n'
+            'Valid charger records: ${rawDocs.length}\n'
+            'Chargers within radius: ${_markers.length}\n'
+            'Final markers: ${getFilteredMarkers().length}',
           );
+
+          if (_markers.isNotEmpty) {
+            _searchStatusMessage = '${_markers.length} chargers found near $cityName';
+          } else {
+            _searchStatusMessage = 'No chargers found near $cityName. Try expanding your search.';
+          }
         } else {
-          _searchStatusMessage = 'Could not find location coordinates';
+          _searchStatusMessage = 'Could not find location coordinates for "$description"';
         }
       } else if (type == 'network') {
         final network = suggestion['network'] as String;
@@ -468,37 +487,53 @@ class MapsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       LatLng? coords;
-      if (placeIdOrQuery.startsWith('ChI') || placeIdOrQuery.length > 20) {
+      if (placeIdOrQuery.startsWith('ChI') && placeIdOrQuery.length > 20) {
         coords = await _mapsService.getPlaceCoordinates(placeIdOrQuery);
       }
       coords ??= await _mapsService.getCoordinatesFromAddress(placeIdOrQuery);
 
       if (coords != null) {
         onCoordinatesFetched(coords);
+        final cleanName = placeIdOrQuery.split(',').first.trim();
         _currentLocation = {
           'latitude': coords.latitude,
           'longitude': coords.longitude,
         };
+
+        debugPrint(
+          '[MAP-SEARCH-DIAGNOSTIC]\n'
+          'Selected location: $cleanName\n'
+          'Latitude: ${coords.latitude}\n'
+          'Longitude: ${coords.longitude}\n'
+          'Camera moved: true',
+        );
+
         final nearby = await _hybridChargerRepository.searchNearbyChargers(
           latitude: coords.latitude,
           longitude: coords.longitude,
         );
         _markers = nearby;
-        final cleanName = placeIdOrQuery.split(',').first.trim();
-        _searchStatusMessage = '${_markers.length} chargers found near $cleanName';
         _suggestions = [];
 
         final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+
         debugPrint(
-          '[MAP-DIAGNOSTIC]\n'
-          'Place selected: "$placeIdOrQuery"\n'
-          'Coordinates: (${coords.latitude}, ${coords.longitude})\n'
-          'Firestore chargers fetched: ${rawDocs.length}\n'
-          'Valid chargers: ${rawDocs.length}\n'
-          'Chargers returned near location: ${_markers.length}',
+          '[CHARGER-SEARCH-DIAGNOSTIC]\n'
+          'Search location: $cleanName\n'
+          'Coordinates: ${coords.latitude}, ${coords.longitude}\n'
+          'Firestore records fetched: ${rawDocs.length}\n'
+          'Valid charger records: ${rawDocs.length}\n'
+          'Chargers within radius: ${_markers.length}\n'
+          'Final markers: ${getFilteredMarkers().length}',
         );
+
+        if (_markers.isNotEmpty) {
+          _searchStatusMessage = '${_markers.length} chargers found near $cleanName';
+        } else {
+          _searchStatusMessage = 'No chargers found near $cleanName. Try expanding your search.';
+        }
       } else {
-        _searchStatusMessage = 'Location not found';
+        _searchStatusMessage = 'Could not find location coordinates for "$placeIdOrQuery"';
       }
     } catch (e) {
       debugPrint('[MapsProvider] Error selecting place: $e');

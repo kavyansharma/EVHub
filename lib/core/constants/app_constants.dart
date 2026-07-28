@@ -30,5 +30,5 @@ class AppConstants {
 
   // Open Charge Map API Configuration (India Bulk Importer)
   static const String openChargeMapApiBaseUrl = 'https://api.openchargemap.io/v3/poi/';
-  static const String openChargeMapApiKey = ''; // Inject via UI or environment variable
+  static const String openChargeMapApiKey = 'c63d4bf2-7ff4-4bcb-ac54-d27877db522f';
 }

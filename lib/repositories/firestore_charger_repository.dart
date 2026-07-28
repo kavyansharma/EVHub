@@ -36,6 +36,11 @@ class FirestoreChargerRepository {
   FirestoreChargerRepository({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
+  /// Static helper method exposed for testing schema parsing
+  static MapMarkerModel? parseDocumentToModel(String id, Map<String, dynamic> data) {
+    return _documentToModel(id, data);
+  }
+
   // ───────────────────────────────────────────────────────────
   // READ: getAllChargers
   // ───────────────────────────────────────────────────────────
@@ -398,7 +403,7 @@ class FirestoreChargerRepository {
   // ───────────────────────────────────────────────────────────
 
   /// Converts a raw Firestore document map to a [MapMarkerModel].
-  MapMarkerModel? _documentToModel(String docId, Map<String, dynamic> data) {
+  static MapMarkerModel? _documentToModel(String docId, Map<String, dynamic> data) {
     try {
       final String id = (data['id'] as String?)?.trim().isNotEmpty == true
           ? data['id'] as String
@@ -412,31 +417,26 @@ class FirestoreChargerRepository {
       double? longitude;
 
       // 1. Check GeoPoint in 'location'
+      double? parseCoord(dynamic v) {
+        if (v == null) return null;
+        if (v is num) return v.toDouble();
+        if (v is String) return double.tryParse(v);
+        return null;
+      }
+
+      // 1. Check GeoPoint in 'location'
       final dynamic locationField = data['location'];
       if (locationField is GeoPoint) {
         latitude = locationField.latitude;
         longitude = locationField.longitude;
       } else if (locationField is Map) {
-        latitude = (locationField['latitude'] as num?)?.toDouble() ??
-            (locationField['lat'] as num?)?.toDouble() ??
-            double.tryParse(locationField['latitude']?.toString() ?? '') ??
-            double.tryParse(locationField['lat']?.toString() ?? '');
-        longitude = (locationField['longitude'] as num?)?.toDouble() ??
-            (locationField['lng'] as num?)?.toDouble() ??
-            double.tryParse(locationField['longitude']?.toString() ?? '') ??
-            double.tryParse(locationField['lng']?.toString() ?? '');
+        latitude = parseCoord(locationField['latitude']) ?? parseCoord(locationField['lat']);
+        longitude = parseCoord(locationField['longitude']) ?? parseCoord(locationField['lng']);
       }
 
       // 2. Fallback to top-level latitude/longitude or lat/lng
-      latitude ??= (data['latitude'] as num?)?.toDouble() ??
-          (data['lat'] as num?)?.toDouble() ??
-          double.tryParse(data['latitude']?.toString() ?? '') ??
-          double.tryParse(data['lat']?.toString() ?? '');
-
-      longitude ??= (data['longitude'] as num?)?.toDouble() ??
-          (data['lng'] as num?)?.toDouble() ??
-          double.tryParse(data['longitude']?.toString() ?? '') ??
-          double.tryParse(data['lng']?.toString() ?? '');
+      latitude ??= parseCoord(data['latitude']) ?? parseCoord(data['lat']);
+      longitude ??= parseCoord(data['longitude']) ?? parseCoord(data['lng']);
 
       // Reject document if valid coordinates cannot be extracted or fall outside valid range
       if (latitude == null || longitude == null || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
@@ -611,7 +611,7 @@ class FirestoreChargerRepository {
   // ───────────────────────────────────────────────────────────
 
   /// Converts a Firestore status string to [MarkerStatus] enum.
-  MarkerStatus _parseStatus(String? raw) {
+  static MarkerStatus _parseStatus(String? raw) {
     if (raw == null || raw.trim().isEmpty) {
       return MarkerStatus.unknown;
     }

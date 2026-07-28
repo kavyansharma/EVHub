@@ -4,6 +4,8 @@ import '../models/map_marker_model.dart';
 import '../models/user_model.dart';
 import '../repositories/firestore_charger_repository.dart';
 
+import '../services/india_coverage_audit_service.dart';
+
 class NetworkStat {
   final String networkName;
   final int count;
@@ -155,6 +157,7 @@ class ChargerDataDashboardProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   int _staleThresholdDays = 30;
+  IndiaChargerAuditReport? _auditReport;
 
   static const int staleDataDays = 30;
 
@@ -167,6 +170,12 @@ class ChargerDataDashboardProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   int get staleThresholdDays => _staleThresholdDays;
+  IndiaChargerAuditReport get indiaAuditReport => _auditReport ?? IndiaCoverageAuditService.runAudit(_chargers);
+
+  void runIndiaCoverageAudit() {
+    _auditReport = IndiaCoverageAuditService.runAudit(_chargers);
+    notifyListeners();
+  }
 
   void setStaleThresholdDays(int days) {
     _staleThresholdDays = days;

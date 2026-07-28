@@ -192,6 +192,12 @@ Dashboard Access: ${currentUser.isAdmin ? 'GRANTED' : 'DENIED'}
                     const SizedBox(height: 12),
                     _buildRecentActivitySection(dbProvider),
                     const SizedBox(height: 24),
+
+                    // SECTION 9: India Charger Data Coverage
+                    _buildSectionHeader('9. India Charger Data Coverage', HugeIcons.strokeRoundedLocation01),
+                    const SizedBox(height: 12),
+                    _buildIndiaCoverageSection(dbProvider),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -926,6 +932,188 @@ Dashboard Access: ${currentUser.isAdmin ? 'GRANTED' : 'DENIED'}
         const SizedBox(height: 2),
         Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
       ],
+    );
+  }
+
+  // =========================================================================
+  // SECTION 9: INDIA CHARGER DATA COVERAGE & AUDIT PANEL
+  // =========================================================================
+  Widget _buildIndiaCoverageSection(ChargerDataDashboardProvider dbProvider) {
+    final report = dbProvider.indiaAuditReport;
+    final isLowData = report.indiaChargersCount < 1000;
+    final String lastAuditRunText = DateTime.now().toLocal().toString().split('.').first;
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(20),
+      borderRadius: 24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'India Charger Data Coverage',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Last Audit Run: $lastAuditRunText',
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  ),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const HugeIcon(icon: HugeIcons.strokeRoundedPlay, color: Colors.black, size: 14),
+                    label: const Text('Run India Data Coverage Audit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      dbProvider.runIndiaCoverageAudit();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('India Data Coverage Audit completed cleanly (100% read-only).'),
+                          backgroundColor: AppColors.secondary,
+                        ),
+                      );
+                    },
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF64B5F6),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const HugeIcon(icon: HugeIcons.strokeRoundedDownload01, color: Colors.black, size: 14),
+                    label: const Text('Run Full India Sync', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BulkChargerImportScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          if (isLowData) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.danger.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: const [
+                  HugeIcon(icon: HugeIcons.strokeRoundedAlert02, color: AppColors.danger, size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Dataset coverage is low. Run OCM India Sync.',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Audit Metric Grid Chips
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildCoverageChip('Total Chargers', '${report.totalChargers}', Colors.white),
+              _buildCoverageChip('India Chargers', '${report.indiaChargersCount}', AppColors.secondary),
+              _buildCoverageChip('OCM Chargers', '${report.ocmCount}', const Color(0xFF64B5F6)),
+              _buildCoverageChip('EVHub Verified', '${report.evhubVerifiedCount}', AppColors.primary),
+              _buildCoverageChip('Cities Covered', '${report.totalCitiesCovered}', AppColors.accent),
+              _buildCoverageChip('States Covered', '${report.totalStatesCovered}', Colors.purpleAccent),
+              _buildCoverageChip('Valid Coordinates', '${report.validCoordinatesCount}', Colors.greenAccent),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          const Text(
+            'Major City Charger Density (25 km Radius)',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+
+          // City Coverage Table
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Table(
+              columnWidths: const {
+                0: FlexColumnWidth(2),
+                1: FlexColumnWidth(1.5),
+                2: FlexColumnWidth(2),
+              },
+              children: [
+                const TableRow(
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white12))),
+                  children: [
+                    Padding(padding: EdgeInsets.all(10), child: Text('City', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11))),
+                    Padding(padding: EdgeInsets.all(10), child: Text('25km Count', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11))),
+                    Padding(padding: EdgeInsets.all(10), child: Text('Status', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontSize: 11))),
+                  ],
+                ),
+                ...report.cityCoverageList.take(7).map((city) {
+                  final statusText = city.countWithin25km > 0 ? '${city.countWithin25km} chargers available' : 'Needs OCM Sync';
+                  final statusColor = city.countWithin25km > 0 ? AppColors.secondary : AppColors.warning;
+                  return TableRow(
+                    decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
+                    children: [
+                      Padding(padding: const EdgeInsets.all(10), child: Text(city.cityName, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+                      Padding(padding: const EdgeInsets.all(10), child: Text('${city.countWithin25km}', style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold))),
+                      Padding(padding: const EdgeInsets.all(10), child: Text(statusText, style: TextStyle(color: statusColor, fontSize: 11))),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoverageChip(String title, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(title, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+        ],
+      ),
     );
   }
 }

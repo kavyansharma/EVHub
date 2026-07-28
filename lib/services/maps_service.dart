@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/map_marker_model.dart';
+import '../models/location_search_result.dart';
 import '../core/constants/app_constants.dart';
 
 class MapsService {
@@ -45,12 +46,78 @@ class MapsService {
     return [];
   }
 
-  // 2. Google Places Autocomplete API with Location Bias
+  static final Map<String, Map<String, dynamic>> _cityMetadataLookup = {
+    'delhi': {'title': 'Delhi', 'subtitle': 'National Capital Territory, India', 'lat': 28.6139, 'lng': 77.2090, 'aliases': ['new delhi', 'delhi ncr', 'newdelhi', 'dilli']},
+    'new delhi': {'title': 'New Delhi', 'subtitle': 'Delhi, India', 'lat': 28.6139, 'lng': 77.2090, 'aliases': ['delhi', 'dilli']},
+    'connaught place': {'title': 'Connaught Place', 'subtitle': 'New Delhi, Delhi, India', 'lat': 28.6304, 'lng': 77.2177, 'aliases': ['cp delhi', 'cp']},
+    'gurugram': {'title': 'Gurugram', 'subtitle': 'Haryana, India', 'lat': 28.4595, 'lng': 77.0266, 'aliases': ['gurgaon']},
+    'gurgaon': {'title': 'Gurugram (Gurgaon)', 'subtitle': 'Haryana, India', 'lat': 28.4595, 'lng': 77.0266, 'aliases': ['gurugram']},
+    'noida': {'title': 'Noida', 'subtitle': 'Uttar Pradesh, India', 'lat': 28.5355, 'lng': 77.3910, 'aliases': ['greater noida', 'noida ncr']},
+    'bengaluru': {'title': 'Bengaluru', 'subtitle': 'Karnataka, India', 'lat': 12.9716, 'lng': 77.5946, 'aliases': ['bangalore']},
+    'bangalore': {'title': 'Bengaluru (Bangalore)', 'subtitle': 'Karnataka, India', 'lat': 12.9716, 'lng': 77.5946, 'aliases': ['bengaluru']},
+    'chennai': {'title': 'Chennai', 'subtitle': 'Tamil Nadu, India', 'lat': 13.0827, 'lng': 80.2707, 'aliases': ['madras']},
+    'mumbai': {'title': 'Mumbai', 'subtitle': 'Maharashtra, India', 'lat': 19.0760, 'lng': 72.8777, 'aliases': ['bombay']},
+    'hyderabad': {'title': 'Hyderabad', 'subtitle': 'Telangana, India', 'lat': 17.3850, 'lng': 78.4867, 'aliases': ['secunderabad']},
+    'pune': {'title': 'Pune', 'subtitle': 'Maharashtra, India', 'lat': 18.5204, 'lng': 73.8567, 'aliases': ['poona']},
+    'kolkata': {'title': 'Kolkata', 'subtitle': 'West Bengal, India', 'lat': 22.5726, 'lng': 88.3639, 'aliases': ['calcutta']},
+    'ahmedabad': {'title': 'Ahmedabad', 'subtitle': 'Gujarat, India', 'lat': 23.0225, 'lng': 72.5714, 'aliases': ['amdavad']},
+    'jaipur': {'title': 'Jaipur', 'subtitle': 'Rajasthan, India', 'lat': 26.9124, 'lng': 75.7873, 'aliases': ['pink city']},
+    'surat': {'title': 'Surat', 'subtitle': 'Gujarat, India', 'lat': 21.1702, 'lng': 72.8311, 'aliases': []},
+    'kochi': {'title': 'Kochi', 'subtitle': 'Kerala, India', 'lat': 9.9312, 'lng': 76.2673, 'aliases': ['cochin']},
+    'coimbatore': {'title': 'Coimbatore', 'subtitle': 'Tamil Nadu, India', 'lat': 11.0168, 'lng': 76.9558, 'aliases': []},
+    'chandigarh': {'title': 'Chandigarh', 'subtitle': 'Punjab/Haryana, India', 'lat': 30.7333, 'lng': 76.7794, 'aliases': []},
+  };
+
+  /// Local Indian location fallback search supporting alias, partial, and case-insensitive matches
+  List<LocationSearchResult> searchLocalLocationIndex(String query) {
+    final cleanQuery = query.trim().toLowerCase();
+    if (cleanQuery.isEmpty) return [];
+
+    final List<LocationSearchResult> results = [];
+    final Set<String> addedKeys = {};
+
+    for (final entry in _cityMetadataLookup.entries) {
+      final key = entry.key;
+      final meta = entry.value;
+      final title = meta['title'] as String;
+      final subtitle = meta['subtitle'] as String;
+      final lat = meta['lat'] as double;
+      final lng = meta['lng'] as double;
+      final List<String> aliases = (meta['aliases'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+
+      final matchesKey = key.contains(cleanQuery) || cleanQuery.contains(key);
+      final matchesAlias = aliases.any((a) => a.contains(cleanQuery) || cleanQuery.contains(a));
+
+      if ((matchesKey || matchesAlias) && !addedKeys.contains(key)) {
+        addedKeys.add(key);
+        results.add(LocationSearchResult(
+          displayName: title,
+          subtitle: subtitle,
+          latitude: lat,
+          longitude: lng,
+          source: LocationSearchResultSource.localFallback,
+        ));
+      }
+    }
+
+    return results;
+  }
+
+  // 2. Google Places Autocomplete API with Automatic Local Fallback
   Future<List<Map<String, dynamic>>> getAutocompleteSuggestions(String query, {double? currentLat, double? currentLng}) async {
-    if (query.isEmpty) return [];
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return [];
+
+    bool apiCalled = false;
+    String apiResponseStatus = 'SKIPPED';
+    int googleResultsCount = 0;
+    bool fallbackAttempted = false;
+    int fallbackResultsCount = 0;
+
+    final List<Map<String, dynamic>> suggestions = [];
 
     final Map<String, String> queryParams = {
-      'input': query,
+      'input': cleanQuery,
       'key': _apiKey,
     };
 
@@ -62,26 +129,63 @@ class MapsService {
     final url = _buildUri('/maps/api/place/autocomplete/json', queryParams);
 
     try {
-      final response = await http.get(url);
+      apiCalled = true;
+      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      apiResponseStatus = 'HTTP ${response.statusCode}';
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        final status = data['status'] as String? ?? 'UNKNOWN';
+        apiResponseStatus = 'API Status: $status';
+
         final predictions = data['predictions'] as List<dynamic>?;
-        if (predictions != null) {
-          return predictions.map((pred) => {
-            'description': pred['description'] as String,
-            'place_id': pred['place_id'] as String,
-          }).toList();
+        if (predictions != null && predictions.isNotEmpty) {
+          googleResultsCount = predictions.length;
+          for (final pred in predictions) {
+            suggestions.add({
+              'description': pred['description'] as String,
+              'place_id': pred['place_id'] as String,
+              'type': 'location',
+              'subtitle': 'Location search',
+              'source': 'google_places',
+            });
+          }
         }
       }
     } catch (e) {
-      debugPrint("Autocomplete API Error: $e");
+      apiResponseStatus = 'ERROR: $e';
+      debugPrint("Autocomplete API Error (falling back to local index): $e");
     }
 
-    return [];
+    // Always query local fallback dictionary if Google API returned 0 results or failed
+    if (suggestions.isEmpty) {
+      fallbackAttempted = true;
+      final localMatches = searchLocalLocationIndex(cleanQuery);
+      fallbackResultsCount = localMatches.length;
+      for (final match in localMatches) {
+        suggestions.add(match.toSuggestionMap());
+      }
+    }
+
+    debugPrint(
+      '[SEARCH-DIAGNOSTIC]\n'
+      'Query: "$cleanQuery"\n'
+      'Google API called: $apiCalled\n'
+      'Google API response: $apiResponseStatus\n'
+      'Google results count: $googleResultsCount\n'
+      'Fallback search attempted: $fallbackAttempted\n'
+      'Fallback results count: $fallbackResultsCount\n'
+      'Final suggestions count: ${suggestions.length}',
+    );
+
+    return suggestions;
   }
 
   // Fetch coordinates of an Autocomplete suggestion
   Future<LatLng?> getPlaceCoordinates(String placeId) async {
+    if (placeId.isEmpty || !placeId.startsWith('ChI')) {
+      return null;
+    }
     final queryParams = {
       'place_id': placeId,
       'fields': 'geometry',
@@ -95,8 +199,8 @@ class MapsService {
         final data = json.decode(response.body);
         final geometry = data['result']?['geometry'];
         if (geometry != null) {
-          final lat = geometry['location']['lat'] as double;
-          final lng = geometry['location']['lng'] as double;
+          final lat = (geometry['location']['lat'] as num).toDouble();
+          final lng = (geometry['location']['lng'] as num).toDouble();
           return LatLng(lat, lng);
         }
       }
@@ -106,39 +210,17 @@ class MapsService {
     return null;
   }
 
-  static final Map<String, LatLng> _cityCoordinatesLookup = {
-    'delhi': const LatLng(28.6139, 77.2090),
-    'new delhi': const LatLng(28.6139, 77.2090),
-    'connaught place': const LatLng(28.6304, 77.2177),
-    'gurugram': const LatLng(28.4595, 77.0266),
-    'gurgaon': const LatLng(28.4595, 77.0266),
-    'noida': const LatLng(28.5355, 77.3910),
-    'bengaluru': const LatLng(12.9716, 77.5946),
-    'bangalore': const LatLng(12.9716, 77.5946),
-    'chennai': const LatLng(13.0827, 80.2707),
-    'mumbai': const LatLng(19.0760, 72.8777),
-    'hyderabad': const LatLng(17.3850, 78.4867),
-    'pune': const LatLng(18.5204, 73.8567),
-    'kolkata': const LatLng(22.5726, 88.3639),
-    'ahmedabad': const LatLng(23.0225, 72.5714),
-    'jaipur': const LatLng(26.9124, 75.7873),
-    'surat': const LatLng(21.1702, 72.8311),
-    'kochi': const LatLng(9.9312, 76.2673),
-    'coimbatore': const LatLng(11.0168, 76.9558),
-    'chandigarh': const LatLng(30.7333, 76.7794),
-  };
-
   // Fetch coordinates using Google Geocoding API with robust Indian City Fallback
   Future<LatLng?> getCoordinatesFromAddress(String address) async {
     final cleanQuery = address.trim().toLowerCase();
     if (cleanQuery.isEmpty) return null;
 
-    // 1. Direct dictionary check for known Indian cities & hubs
-    for (final entry in _cityCoordinatesLookup.entries) {
-      if (cleanQuery == entry.key || cleanQuery.contains(entry.key)) {
-        debugPrint('[MapsService] Found city match in local geocode index: "${entry.key}" -> ${entry.value}');
-        return entry.value;
-      }
+    // 1. Check local search index first
+    final localMatches = searchLocalLocationIndex(cleanQuery);
+    if (localMatches.isNotEmpty) {
+      final match = localMatches.first;
+      debugPrint('[MapsService] Found city match in local geocode index: "${match.displayName}" -> ${match.coordinates}');
+      return match.coordinates;
     }
 
     final queryParams = {
@@ -163,13 +245,6 @@ class MapsService {
       }
     } catch (e) {
       debugPrint("Geocoding API error: $e");
-    }
-
-    // 2. Secondary fuzzy check if API call failed
-    for (final entry in _cityCoordinatesLookup.entries) {
-      if (entry.key.contains(cleanQuery) || cleanQuery.contains(entry.key)) {
-        return entry.value;
-      }
     }
 
     return null;
