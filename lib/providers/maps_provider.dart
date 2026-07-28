@@ -363,9 +363,12 @@ class MapsProvider extends ChangeNotifier {
         for (final pred in placePredictions) {
           combinedSuggestions.add({
             'description': pred['description'] as String,
-            'place_id': pred['place_id'] as String,
+            'place_id': pred['place_id'] as String? ?? '',
             'type': 'location',
-            'subtitle': 'Location search',
+            'subtitle': pred['subtitle'] as String? ?? 'Location search',
+            'latitude': pred['latitude'],
+            'longitude': pred['longitude'],
+            'source': pred['source'] ?? 'google_places',
           });
         }
       } catch (e) {
@@ -383,6 +386,7 @@ class MapsProvider extends ChangeNotifier {
     Map<String, dynamic> suggestion,
     Function(LatLng coordinates, {double? zoom}) onNavigate,
   ) async {
+    debugPrint('[SEARCH-SELECTION-DIAGNOSTIC] selectSuggestion() called');
     _suggestions = [];
     _isLoading = true;
     notifyListeners();
@@ -398,8 +402,10 @@ class MapsProvider extends ChangeNotifier {
 
         LatLng? coords;
         if (rawLat is num && rawLng is num) {
+          debugPrint('[SEARCH-SELECTION-DIAGNOSTIC] Using direct coordinates: ($rawLat, $rawLng)');
           coords = LatLng(rawLat.toDouble(), rawLng.toDouble());
         } else if (placeId != null && placeId.isNotEmpty && placeId.startsWith('ChI')) {
+          debugPrint('[SEARCH-SELECTION-DIAGNOSTIC] Resolving coordinates for place_id: $placeId');
           coords = await _mapsService.getPlaceCoordinates(placeId);
         }
         coords ??= await _mapsService.getCoordinatesFromAddress(description);
@@ -411,6 +417,7 @@ class MapsProvider extends ChangeNotifier {
             'longitude': coords.longitude,
           };
 
+          debugPrint('[SEARCH-CAMERA-DIAGNOSTIC] Moving camera to: ${coords.latitude}, ${coords.longitude}');
           onNavigate(coords, zoom: 12.0);
 
           debugPrint(

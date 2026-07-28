@@ -117,9 +117,13 @@ class _MapsScreenState extends State<MapsScreen> {
     });
 
     _searchFocusNode.addListener(() {
-      setState(() {
-        _isSuggestionsVisible = _searchFocusNode.hasFocus;
-      });
+      if (_searchFocusNode.hasFocus && _searchController.text.trim().length >= 2) {
+        if (mounted) {
+          setState(() {
+            _isSuggestionsVisible = true;
+          });
+        }
+      }
     });
   }
 
@@ -567,37 +571,55 @@ class _MapsScreenState extends State<MapsScreen> {
                                 iconColor = AppColors.primary;
                               }
 
-                              return ListTile(
-                                leading: Icon(leadingIcon, color: iconColor, size: 20),
-                                title: Text(
-                                  sug['description'] as String,
-                                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                subtitle: sug['subtitle'] != null
-                                    ? Text(
-                                        sug['subtitle'] as String,
-                                        style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      )
-                                    : null,
+                              return GestureDetector(
+                                behavior: HitTestBehavior.opaque,
                                 onTap: () {
+                                  final desc = sug['description'] as String? ?? 'Unknown';
+                                  final src = sug['source'] as String? ?? 'unknown';
+                                  final lat = sug['latitude'] ?? 0.0;
+                                  final lng = sug['longitude'] ?? 0.0;
+
+                                  debugPrint('[SEARCH-CLICK-DIAGNOSTIC]');
+                                  debugPrint('Result clicked: $desc');
+                                  debugPrint('Index: $idx');
+                                  debugPrint('Source: $src');
+                                  debugPrint('Coordinates: $lat, $lng');
+
                                   _searchFocusNode.unfocus();
-                                  setState(() {
-                                    _isSuggestionsVisible = false;
-                                  });
-                                  _searchController.text = sug['description'] as String;
+                                  if (mounted) {
+                                    setState(() {
+                                      _isSuggestionsVisible = false;
+                                    });
+                                  }
+                                  _searchController.text = desc;
+
                                   mapsProvider.selectSuggestion(sug, (latLng, {zoom}) {
-                                    debugPrint('[MAP-INTERACTION] Camera moved: true');
+                                    debugPrint('[SEARCH-CAMERA-DIAGNOSTIC] Moving camera to: ${latLng.latitude}, ${latLng.longitude}');
                                     _mapController?.animateCamera(
                                       CameraUpdate.newCameraPosition(
                                         CameraPosition(target: latLng, zoom: zoom ?? 14.5),
                                       ),
                                     );
+                                    debugPrint('[MAP-INTERACTION] Camera moved: true');
                                   });
                                 },
+                                child: ListTile(
+                                  leading: Icon(leadingIcon, color: iconColor, size: 20),
+                                  title: Text(
+                                    sug['description'] as String,
+                                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: sug['subtitle'] != null
+                                      ? Text(
+                                          sug['subtitle'] as String,
+                                          style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        )
+                                      : null,
+                                ),
                               );
                             },
                           ),

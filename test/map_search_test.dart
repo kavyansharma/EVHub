@@ -201,6 +201,41 @@ void main() {
       expect(provider.searchStatusMessage, contains('chargers found near Delhi'));
     });
 
+    test('5B. Direct coordinates in local fallback selection avoid extra place API network requests', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger]);
+      // Mock service configured to fail if Place Details API is called
+      final mapsService = MockMapsServiceForSearch(shouldFail: true);
+
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      bool cameraMoved = false;
+      LatLng? targetCoords;
+
+      await provider.selectSuggestion(
+        {
+          'description': 'Delhi',
+          'type': 'location',
+          'latitude': 28.6139,
+          'longitude': 77.2090,
+          'source': 'local_fallback',
+        },
+        (coords, {zoom}) {
+          cameraMoved = true;
+          targetCoords = coords;
+        },
+      );
+
+      expect(cameraMoved, isTrue);
+      expect(targetCoords?.latitude, closeTo(28.6139, 0.001));
+      expect(targetCoords?.longitude, closeTo(77.2090, 0.001));
+      expect(provider.currentLocation?['latitude'], closeTo(28.6139, 0.001));
+      expect(provider.searchStatusMessage, contains('chargers found near Delhi'));
+    });
+
     test('6. Adaptive Nearby Charger Search expands radius up to 50km', () async {
       final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger]);
       final mapsService = MockMapsServiceForSearch();
