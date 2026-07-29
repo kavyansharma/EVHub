@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/map_marker_model.dart';
 import 'firestore_charger_repository.dart';
 import '../services/maps_service.dart';
@@ -170,6 +171,45 @@ class HybridChargerRepository {
     }
 
     return results;
+  }
+
+  /// Mode 3: Route Chargers Engine
+  /// Fetches all Firestore chargers and filters chargers located within [corridorRadiusKm] (default 10.0 km)
+  /// of any point along the route [polylinePoints].
+  Future<List<MapMarkerModel>> searchRouteCorridorChargers({
+    required List<LatLng> polylinePoints,
+    double corridorRadiusKm = 10.0,
+  }) async {
+    if (polylinePoints.isEmpty) return [];
+
+    final List<MapMarkerModel> allChargers = await _firestoreRepository.getPublicVerifiedChargers();
+    final List<MapMarkerModel> corridorChargers = [];
+
+    for (final charger in allChargers) {
+      if (!charger.hasValidCoordinates) continue;
+
+      double minDistanceMeters = double.infinity;
+      for (final pt in polylinePoints) {
+        final distM = Geolocator.distanceBetween(
+          pt.latitude,
+          pt.longitude,
+          charger.latitude,
+          charger.longitude,
+        );
+        if (distM < minDistanceMeters) {
+          minDistanceMeters = distM;
+        }
+      }
+
+      final minDistanceKm = minDistanceMeters / 1000.0;
+      if (minDistanceKm <= corridorRadiusKm) {
+        corridorChargers.add(charger.copyWith(distanceKm: minDistanceKm));
+      }
+    }
+
+    corridorChargers.sort((a, b) => (a.distanceKm ?? 0).compareTo(b.distanceKm ?? 0));
+    debugPrint('[ROUTE-CORRIDOR-ENGINE] Found ${corridorChargers.length} chargers within $corridorRadiusKm km corridor of ${polylinePoints.length} polyline points');
+    return corridorChargers;
   }
 
   /// Checks if two chargers are duplicates.

@@ -577,23 +577,40 @@ class MapsProvider extends ChangeNotifier {
   }
 
   // ─── Directions route ─────────────────────────────────────────────────────
+  // ─── Mode 3: Route Chargers & Directions Corridor Engine ──────────────────
   Future<void> calculateRoute(LatLng dest) async {
     if (_currentLocation == null) return;
+    final origin = LatLng(_currentLocation!['latitude']!, _currentLocation!['longitude']!);
+    await calculateRouteBetween(origin, dest);
+  }
+
+  Future<void> calculateRouteBetween(LatLng origin, LatLng dest) async {
     _isLoadingRoute = true;
+    _isLoading = true;
     notifyListeners();
 
     try {
-      final origin = LatLng(_currentLocation!['latitude']!, _currentLocation!['longitude']!);
       final directions = await _mapsService.getDirections(origin, dest);
       if (directions != null) {
         _routePoints = directions['points'] as List<LatLng>;
         _routeDistance = directions['distance'] as String;
         _routeDuration = directions['duration'] as String;
+
+        // Fetch route corridor chargers within 10 km corridor of the polyline
+        final routeChargers = await _hybridChargerRepository.searchRouteCorridorChargers(
+          polylinePoints: _routePoints,
+          corridorRadiusKm: 10.0,
+        );
+        _markers = routeChargers;
+        final visible = getFilteredMarkers();
+        _searchStatusMessage = '${visible.length} chargers found along 10 km route corridor';
       }
     } catch (e) {
-      debugPrint('[MapsProvider] Route error: $e');
+      debugPrint('[MapsProvider] Route corridor error: $e');
+      _searchStatusMessage = 'Route calculation failed';
     } finally {
       _isLoadingRoute = false;
+      _isLoading = false;
       notifyListeners();
     }
   }
@@ -602,7 +619,11 @@ class MapsProvider extends ChangeNotifier {
     _routePoints = [];
     _routeDistance = null;
     _routeDuration = null;
-    notifyListeners();
+    if (_currentLocation != null) {
+      fetchCurrentLocationAndStations();
+    } else {
+      notifyListeners();
+    }
   }
 
   // ─── Selected marker ──────────────────────────────────────────────────────

@@ -556,5 +556,93 @@ void main() {
       expect(bounds.southwest.latitude, equals(28.4595));
       expect(bounds.northeast.latitude, equals(28.6304));
     });
+
+    test('DISCOVERY ENGINE MODE 1: GPS-based Nearby Chargers Discovery', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger, sampleVerifiedCharger]);
+      final mapsService = MockMapsServiceForSearch();
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      await provider.fetchCurrentLocationAndStations();
+
+      expect(provider.currentLocation, isNotNull);
+      expect(provider.currentLocation?['latitude'], equals(28.6304));
+      expect(provider.markers, isNotEmpty);
+      expect(provider.getFilteredMarkers().first.latitude, closeTo(28.6304, 0.1));
+    });
+
+    test('DISCOVERY ENGINE MODE 2: Search Location Charger Discovery', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger, sampleVerifiedCharger]);
+      final mapsService = MockMapsServiceForSearch();
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      bool cameraNavigated = false;
+      await provider.selectSuggestion(
+        {
+          'description': 'Delhi',
+          'type': 'location',
+          'latitude': 28.6139,
+          'longitude': 77.2090,
+          'source': 'local_fallback',
+        },
+        (coords, {zoom}) {
+          cameraNavigated = true;
+          expect(coords.latitude, closeTo(28.6139, 0.001));
+        },
+      );
+
+      expect(cameraNavigated, isTrue);
+      expect(provider.currentLocation?['latitude'], equals(28.6139));
+      expect(provider.getFilteredMarkers(), isNotEmpty);
+    });
+
+    test('DISCOVERY ENGINE MODE 3: Route Corridor (10 km) Charger Discovery', () async {
+      final chargerNearRoute = MapMarkerModel(
+        id: 'route_charger_1',
+        title: 'Route Stop Gurgaon',
+        description: 'Gurgaon Expressway',
+        latitude: 28.4595, // ~2 km from route point
+        longitude: 77.0266,
+        type: MarkerType.station,
+      );
+
+      final chargerFarFromRoute = MapMarkerModel(
+        id: 'far_charger_2',
+        title: 'Far Off Station',
+        description: 'Far away',
+        latitude: 19.0760, // Mumbai (~1400 km away from Delhi route)
+        longitude: 72.8777,
+        type: MarkerType.station,
+      );
+
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [chargerNearRoute, chargerFarFromRoute]);
+      final mapsService = MockMapsServiceForSearch();
+      final hybridRepo = HybridChargerRepository(
+        firestoreRepository: firestoreRepo,
+        mapsService: mapsService,
+      );
+
+      final polyline = const [
+        LatLng(28.6139, 77.2090), // Delhi
+        LatLng(28.4590, 77.0260), // Gurgaon
+        LatLng(28.1487, 76.8206), // Bhiwadi
+      ];
+
+      final corridorChargers = await hybridRepo.searchRouteCorridorChargers(
+        polylinePoints: polyline,
+        corridorRadiusKm: 10.0,
+      );
+
+      expect(corridorChargers.length, equals(1));
+      expect(corridorChargers.first.id, equals('route_charger_1'));
+      expect(corridorChargers.first.distanceKm, lessThanOrEqualTo(10.0));
+    });
   });
 }
