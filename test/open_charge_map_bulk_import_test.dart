@@ -491,6 +491,36 @@ Kazam Hub,Kazam,Indiranagar,Bengaluru,Karnataka,India,12.9784,77.6408,4,4,60kW''
       final validCount = results.where((r) => r.isValid && !r.isDuplicate).length;
       expect(validCount, equals(10000));
     });
+
+    test('TEST 30: maxresults=5000 India Request Construction & No Offset Pagination', () async {
+      final mockJson = [
+        {
+          'ID': 77001,
+          'AddressInfo': {
+            'Title': 'India Highway Hub',
+            'Latitude': 28.6139,
+            'Longitude': 77.2090,
+            'Country': {'ISOCode': 'IN', 'Title': 'India'},
+          },
+        },
+      ];
+
+      Uri? requestedUri;
+      final client = http_testing.MockClient((request) async {
+        requestedUri = request.url;
+        return http.Response(json.encode(mockJson), 200);
+      });
+
+      final dataSource = OpenChargeMapChargerDataSource(client: client);
+      final result = await dataSource.fetchChargersWithStats();
+
+      expect(requestedUri, isNotNull);
+      expect(requestedUri!.queryParameters['maxresults'], equals('5000'));
+      expect(requestedUri!.queryParameters['countrycode'], equals('IN'));
+      expect(requestedUri!.queryParameters.containsKey('offset'), isFalse);
+      expect(result.validChargers.length, equals(1));
+      expect(result.validChargers.first.id, equals('ocm_77001'));
+    });
   });
 }
 

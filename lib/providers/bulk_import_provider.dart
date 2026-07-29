@@ -31,7 +31,7 @@ class BulkImportProvider extends ChangeNotifier {
   ImportSourceMode _sourceMode = ImportSourceMode.openChargeMapIndia;
 
   // Open Charge Map Options
-  int _ocmLimit = 250;
+  int _ocmLimit = 5000;
   String _customOcmApiKey = '';
   bool _useDevDirectMode = false;
 

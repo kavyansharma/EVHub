@@ -87,7 +87,7 @@ class OcmApiService implements BulkChargerDataSource {
           },
           body: json.encode({
             'data': {
-              'limit': options?['limit'] ?? 100,
+              'limit': options?['limit'] ?? 5000,
               'offset': options?['offset'] ?? 0,
               'correlationId': correlationId,
             }
@@ -144,12 +144,16 @@ class OcmApiService implements BulkChargerDataSource {
       final Map<String, dynamic> resultData = (bodyJson['result'] as Map<String, dynamic>?) ?? bodyJson;
       final rawList = (resultData['chargers'] as List<dynamic>?) ?? [];
       final List<MapMarkerModel> validChargers = [];
+      final Set<String> seenIds = {};
 
       for (final raw in rawList) {
         if (raw is Map<String, dynamic>) {
           final model = OpenChargeMapChargerDataSource.mapOcmJsonToModel(raw);
           if (model != null) {
-            validChargers.add(model);
+            if (!seenIds.contains(model.id)) {
+              seenIds.add(model.id);
+              validChargers.add(model);
+            }
           }
         }
       }

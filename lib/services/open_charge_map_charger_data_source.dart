@@ -56,30 +56,121 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
         ? apiKey
         : AppConstants.openChargeMapApiKey;
 
-    final targetLimit = (options?['limit'] as int?) ?? 100;
+    final targetLimit = (options?['limit'] as int?) ?? 5000;
+    final bool enableOffsetPagination = options?['enableOffsetPagination'] == true;
     final onProgress = options?['onProgress'] as void Function(int fetched, int page)?;
 
     final List<MapMarkerModel> allChargers = [];
+    final Set<String> seenIds = {};
     int totalApiRecords = 0;
     int nonIndiaRejectedCount = 0;
     int invalidCoordCount = 0;
 
-    const int pageSize = 100;
-    int offset = 0;
-    int pageIndex = 1;
+    if (enableOffsetPagination) {
+      // Legacy / Paginated mode for specific offset testing
+      const int pageSize = 100;
+      int offset = (options?['offset'] as int?) ?? 0;
+      int pageIndex = 1;
 
-    while (allChargers.length < targetLimit) {
-      final int batchSize = (targetLimit - allChargers.length) < pageSize
-          ? (targetLimit - allChargers.length)
-          : pageSize;
+      while (allChargers.length < targetLimit) {
+        final int batchSize = (targetLimit - allChargers.length) < pageSize
+            ? (targetLimit - allChargers.length)
+            : pageSize;
 
+        final queryParameters = <String, String>{
+          'output': 'json',
+          'countrycode': 'IN',
+          'maxresults': batchSize.toString(),
+          'compact': 'true',
+          'verbose': 'false',
+          'offset': offset.toString(),
+        };
+
+        if (effectiveApiKey.isNotEmpty) {
+          queryParameters['key'] = effectiveApiKey;
+        }
+
+        final uri = Uri.parse(AppConstants.openChargeMapApiBaseUrl).replace(
+          queryParameters: queryParameters,
+        );
+
+        debugPrint('[OpenChargeMapChargerDataSource] Fetching Page $pageIndex: $uri');
+
+        http.Response response;
+        try {
+          response = await _client.get(uri).timeout(const Duration(seconds: 20));
+        } catch (e) {
+          debugPrint('[OpenChargeMapChargerDataSource] Network/Timeout Error: $e');
+          if (allChargers.isNotEmpty) break;
+          throw Exception('Network timeout connecting to Open Charge Map API ($e)');
+        }
+
+        if (response.statusCode == 429) {
+          debugPrint('[OpenChargeMapChargerDataSource] ❌ OCM Rate Limit Exceeded (HTTP 429)');
+          if (allChargers.isNotEmpty) break;
+          throw Exception('Open Charge Map API Rate limit exceeded (HTTP 429). Please provide an API Key or try again later.');
+        }
+
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          debugPrint('[OpenChargeMapChargerDataSource] ❌ Invalid API Key (HTTP ${response.statusCode})');
+          if (allChargers.isNotEmpty) break;
+          throw Exception('Invalid Open Charge Map API key. Please check your API key settings.');
+        }
+
+        if (response.statusCode != 200) {
+          debugPrint('[OpenChargeMapChargerDataSource] ❌ HTTP Error ${response.statusCode}: ${response.body}');
+          if (allChargers.isNotEmpty) break;
+          throw Exception('Open Charge Map API returned HTTP ${response.statusCode}');
+        }
+
+        final dynamic decoded = json.decode(response.body);
+        final List<dynamic> batchJson = (decoded is List) ? decoded : [];
+
+        if (batchJson.isEmpty) {
+          debugPrint('[OpenChargeMapChargerDataSource] No more records returned from OCM.');
+          break;
+        }
+
+        totalApiRecords += batchJson.length;
+
+        for (final raw in batchJson) {
+          if (raw is Map<String, dynamic>) {
+            final String? rejectReason = getRejectionReason(raw);
+            if (rejectReason == 'non_india') {
+              nonIndiaRejectedCount++;
+            } else if (rejectReason == 'invalid_coords') {
+              invalidCoordCount++;
+            } else {
+              final model = mapOcmJsonToModel(raw);
+              if (model != null) {
+                if (!seenIds.contains(model.id)) {
+                  seenIds.add(model.id);
+                  allChargers.add(model);
+                }
+              } else {
+                invalidCoordCount++;
+              }
+            }
+          }
+        }
+
+        if (onProgress != null) {
+          onProgress(allChargers.length, pageIndex);
+        }
+
+        if (batchJson.length < batchSize) break;
+        offset += batchSize;
+        pageIndex++;
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    } else {
+      // Standard Direct Fetch: maxresults=5000 without offset pagination
       final queryParameters = <String, String>{
         'output': 'json',
         'countrycode': 'IN',
-        'maxresults': batchSize.toString(),
+        'maxresults': targetLimit.toString(),
         'compact': 'true',
         'verbose': 'false',
-        'offset': offset.toString(),
       };
 
       if (effectiveApiKey.isNotEmpty) {
@@ -90,44 +181,35 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
         queryParameters: queryParameters,
       );
 
-      debugPrint('[OpenChargeMapChargerDataSource] Fetching Page $pageIndex: $uri');
+      debugPrint('[OpenChargeMapChargerDataSource] Fetching India-wide OCM dataset (maxresults=$targetLimit): $uri');
 
       http.Response response;
       try {
-        response = await _client.get(uri).timeout(const Duration(seconds: 20));
+        response = await _client.get(uri).timeout(const Duration(seconds: 30));
       } catch (e) {
         debugPrint('[OpenChargeMapChargerDataSource] Network/Timeout Error: $e');
-        if (allChargers.isNotEmpty) break;
         throw Exception('Network timeout connecting to Open Charge Map API ($e)');
       }
 
       if (response.statusCode == 429) {
         debugPrint('[OpenChargeMapChargerDataSource] ❌ OCM Rate Limit Exceeded (HTTP 429)');
-        if (allChargers.isNotEmpty) break;
         throw Exception('Open Charge Map API Rate limit exceeded (HTTP 429). Please provide an API Key or try again later.');
       }
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         debugPrint('[OpenChargeMapChargerDataSource] ❌ Invalid API Key (HTTP ${response.statusCode})');
-        if (allChargers.isNotEmpty) break;
         throw Exception('Invalid Open Charge Map API key. Please check your API key settings.');
       }
 
       if (response.statusCode != 200) {
         debugPrint('[OpenChargeMapChargerDataSource] ❌ HTTP Error ${response.statusCode}: ${response.body}');
-        if (allChargers.isNotEmpty) break;
         throw Exception('Open Charge Map API returned HTTP ${response.statusCode}');
       }
 
       final dynamic decoded = json.decode(response.body);
       final List<dynamic> batchJson = (decoded is List) ? decoded : [];
 
-      if (batchJson.isEmpty) {
-        debugPrint('[OpenChargeMapChargerDataSource] No more records returned from OCM.');
-        break;
-      }
-
-      totalApiRecords += batchJson.length;
+      totalApiRecords = batchJson.length;
 
       for (final raw in batchJson) {
         if (raw is Map<String, dynamic>) {
@@ -139,7 +221,10 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
           } else {
             final model = mapOcmJsonToModel(raw);
             if (model != null) {
-              allChargers.add(model);
+              if (!seenIds.contains(model.id)) {
+                seenIds.add(model.id);
+                allChargers.add(model);
+              }
             } else {
               invalidCoordCount++;
             }
@@ -148,20 +233,11 @@ class OpenChargeMapChargerDataSource implements BulkChargerDataSource {
       }
 
       if (onProgress != null) {
-        onProgress(allChargers.length, pageIndex);
+        onProgress(allChargers.length, 1);
       }
-
-      if (batchJson.length < batchSize) {
-        break;
-      }
-
-      offset += batchSize;
-      pageIndex++;
-
-      await Future.delayed(const Duration(milliseconds: 200));
     }
 
-    debugPrint('[OpenChargeMapChargerDataSource] ✓ Total valid India chargers parsed: ${allChargers.length}');
+    debugPrint('[OpenChargeMapChargerDataSource] ✓ Total unique valid India chargers parsed: ${allChargers.length} from $totalApiRecords total raw records');
     return OcmFetchResult(
       validChargers: allChargers,
       totalApiRecords: totalApiRecords,
