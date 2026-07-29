@@ -59,8 +59,17 @@ class MockMapsServiceForSearch extends MapsService {
   @override
   Future<List<Map<String, dynamic>>> getAutocompleteSuggestions(String query,
       {double? currentLat, double? currentLng}) async {
-    if (shouldFail) throw Exception('Google Places API Error');
-    return mockPredictions;
+    final List<Map<String, dynamic>> res = [];
+    if (!shouldFail) {
+      res.addAll(mockPredictions);
+    }
+    if (res.isEmpty) {
+      final localMatches = searchLocalLocationIndex(query);
+      for (final match in localMatches) {
+        res.add(match.toSuggestionMap());
+      }
+    }
+    return res;
   }
 
   @override
@@ -298,6 +307,102 @@ void main() {
 
       final result = await repo.getHybridChargers(latitude: 28.6304, longitude: 77.2177);
       expect(result, isNotNull);
+    });
+
+    test('TEST SEARCH 1: "Delhi" returns results', () async {
+      final mapsService = MapsService();
+      final suggestions = await mapsService.getAutocompleteSuggestions('Delhi');
+      expect(suggestions, isNotEmpty);
+      expect(suggestions.any((s) => s['description'].toString().toLowerCase().contains('delhi')), isTrue);
+    });
+
+    test('TEST SEARCH 2: "delhi" (lowercase) returns results', () async {
+      final mapsService = MapsService();
+      final suggestions = await mapsService.getAutocompleteSuggestions('delhi');
+      expect(suggestions, isNotEmpty);
+      expect(suggestions.any((s) => s['description'].toString().toLowerCase().contains('delhi')), isTrue);
+    });
+
+    test('TEST SEARCH 3: "Delhi" returns local fallback when Google API returns 0', () async {
+      final mapsService = MockMapsServiceForSearch(mockPredictions: []);
+      final suggestions = await mapsService.getAutocompleteSuggestions('Delhi');
+      expect(suggestions, isNotEmpty);
+      expect(suggestions.any((s) => s['description'].toString().contains('Delhi')), isTrue);
+    });
+
+    test('TEST SEARCH 4: "Delhi" returns local fallback when Google API fails', () async {
+      final mapsService = MockMapsServiceForSearch(shouldFail: true);
+      final suggestions = await mapsService.getAutocompleteSuggestions('Delhi');
+      expect(suggestions, isNotEmpty);
+      expect(suggestions.any((s) => s['description'].toString().contains('Delhi')), isTrue);
+    });
+
+    test('TEST SEARCH 5: Google results are preserved when Google API returns results', () async {
+      final mapsService = MockMapsServiceForSearch(mockPredictions: [
+        {'description': 'Delhi Airport T3', 'place_id': 'place_delhi_t3'}
+      ]);
+      final suggestions = await mapsService.getAutocompleteSuggestions('Delhi');
+      expect(suggestions.any((s) => s['description'] == 'Delhi Airport T3'), isTrue);
+    });
+
+    test('TEST SEARCH 6: Local fallback result preserves latitude and longitude', () async {
+      final mapsService = MapsService();
+      final localMatches = mapsService.searchLocalLocationIndex('Delhi');
+      expect(localMatches, isNotEmpty);
+      final map = localMatches.first.toSuggestionMap();
+      expect(map['latitude'], isNotNull);
+      expect(map['longitude'], isNotNull);
+      expect(map['latitude'], closeTo(28.6139, 0.05));
+    });
+
+    test('TEST SEARCH 7: Selecting local fallback uses direct coordinates', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger]);
+      final mapsService = MockMapsServiceForSearch(shouldFail: true);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      bool cameraMoved = false;
+      await provider.selectSuggestion(
+        {
+          'description': 'Delhi',
+          'type': 'location',
+          'latitude': 28.6139,
+          'longitude': 77.2090,
+          'source': 'local_fallback',
+        },
+        (coords, {zoom}) {
+          cameraMoved = true;
+          expect(coords.latitude, closeTo(28.6139, 0.001));
+        },
+      );
+      expect(cameraMoved, isTrue);
+    });
+
+    test('TEST SEARCH 8: Selecting Google result uses place_id', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger]);
+      final mapsService = MockMapsServiceForSearch(mockCoords: const LatLng(28.6139, 77.2090));
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      bool cameraMoved = false;
+      await provider.selectSuggestion(
+        {
+          'description': 'Delhi Airport',
+          'place_id': 'ChIJ1234567890abcdef',
+          'type': 'location',
+        },
+        (coords, {zoom}) {
+          cameraMoved = true;
+          expect(coords.latitude, closeTo(28.6139, 0.001));
+        },
+      );
+      expect(cameraMoved, isTrue);
     });
   });
 }

@@ -157,25 +157,23 @@ class MapsService {
       debugPrint("Autocomplete API Error (falling back to local index): $e");
     }
 
-    // Always query local fallback dictionary if Google API returned 0 results or failed
-    if (suggestions.isEmpty) {
-      fallbackAttempted = true;
-      final localMatches = searchLocalLocationIndex(cleanQuery);
-      fallbackResultsCount = localMatches.length;
-      for (final match in localMatches) {
+    // Always query local fallback dictionary so Indian cities are available alongside Google Places
+    fallbackAttempted = true;
+    final localMatches = searchLocalLocationIndex(cleanQuery);
+    fallbackResultsCount = localMatches.length;
+
+    final Set<String> existingDesc = suggestions.map((s) => (s['description'] as String).toLowerCase()).toSet();
+    for (final match in localMatches) {
+      if (!existingDesc.contains(match.displayName.toLowerCase())) {
         suggestions.add(match.toSuggestionMap());
       }
     }
 
     debugPrint(
-      '[SEARCH-DIAGNOSTIC]\n'
-      'Query: "$cleanQuery"\n'
-      'Google API called: $apiCalled\n'
-      'Google API response: $apiResponseStatus\n'
-      'Google results count: $googleResultsCount\n'
-      'Fallback search attempted: $fallbackAttempted\n'
-      'Fallback results count: $fallbackResultsCount\n'
-      'Final suggestions count: ${suggestions.length}',
+      '[SEARCH-REGRESSION-DIAGNOSTIC] Query: "$cleanQuery"\n'
+      '[SEARCH-API-DIAGNOSTIC] Google API called: $apiCalled | Result count: $googleResultsCount | Status: $apiResponseStatus\n'
+      '[SEARCH-FALLBACK-DIAGNOSTIC] Local fallback called: $fallbackAttempted | Result count: $fallbackResultsCount\n'
+      '[SEARCH-COMBINE-DIAGNOSTIC] Google results: $googleResultsCount | Local results: $fallbackResultsCount | Combined results: ${suggestions.length}',
     );
 
     return suggestions;

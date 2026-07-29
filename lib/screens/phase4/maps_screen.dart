@@ -486,6 +486,12 @@ class _MapsScreenState extends State<MapsScreen> {
                                 filled: false,
                               ),
                               onChanged: (val) {
+                                final query = val.trim();
+                                if (mounted) {
+                                  setState(() {
+                                    _isSuggestionsVisible = query.length >= 2;
+                                  });
+                                }
                                 mapsProvider.searchSuggestions(val);
                               },
                               onSubmitted: (val) {
@@ -539,114 +545,146 @@ class _MapsScreenState extends State<MapsScreen> {
                     ),
 
                     // Autocomplete Suggestion List overlay
-                    if (_isSuggestionsVisible && mapsProvider.suggestions.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(top: 8),
-                        constraints: const BoxConstraints(maxHeight: 280),
-                        child: GlassContainer(
-                          borderRadius: 24,
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                          animateBorder: false,
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            itemCount: mapsProvider.suggestions.length,
-                            itemBuilder: (context, idx) {
-                              final sug = mapsProvider.suggestions[idx];
-                              final type = sug['type'] as String? ?? 'location';
-                              
-                              IconData leadingIcon;
-                              Color iconColor;
-                              if (type == 'network') {
-                                leadingIcon = Icons.ev_station;
-                                iconColor = AppColors.primary;
-                              } else if (type == 'station') {
-                                leadingIcon = Icons.electric_car;
-                                iconColor = const Color(0xFF10B981);
-                              } else if (type == 'connector') {
-                                leadingIcon = Icons.power;
-                                iconColor = const Color(0xFFF59E0B);
-                              } else {
-                                leadingIcon = Icons.location_on_outlined;
-                                iconColor = AppColors.primary;
-                              }
-
-                              return GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () {
-                                  final desc = sug['description'] as String? ?? 'Unknown';
-                                  final src = sug['source'] as String? ?? 'unknown';
-                                  final lat = sug['latitude'] ?? 0.0;
-                                  final lng = sug['longitude'] ?? 0.0;
-
-                                  debugPrint('[SEARCH-CLICK-DIAGNOSTIC]');
-                                  debugPrint('Result clicked: $desc');
-                                  debugPrint('Index: $idx');
-                                  debugPrint('Source: $src');
-                                  debugPrint('Coordinates: $lat, $lng');
-
-                                  _searchFocusNode.unfocus();
-                                  if (mounted) {
-                                    setState(() {
-                                      _isSuggestionsVisible = false;
-                                    });
-                                  }
-                                  _searchController.text = desc;
-
-                                  mapsProvider.selectSuggestion(sug, (latLng, {zoom}) {
-                                    debugPrint('[SEARCH-CAMERA-DIAGNOSTIC] Moving camera to: ${latLng.latitude}, ${latLng.longitude}');
-                                    _mapController?.animateCamera(
-                                      CameraUpdate.newCameraPosition(
-                                        CameraPosition(target: latLng, zoom: zoom ?? 14.5),
-                                      ),
-                                    );
-                                    debugPrint('[MAP-INTERACTION] Camera moved: true');
-                                  });
-                                },
-                                child: ListTile(
-                                  leading: Icon(leadingIcon, color: iconColor, size: 20),
-                                  title: Text(
-                                    sug['description'] as String,
-                                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                    Builder(
+                      builder: (context) {
+                        debugPrint(
+                          '[SEARCH-UI-DIAGNOSTIC] Suggestions received by UI: ${mapsProvider.suggestions.length} | Rendered by UI: ${_isSuggestionsVisible ? mapsProvider.suggestions.length : 0}'
+                        );
+                        if (_isSuggestionsVisible && mapsProvider.isSearching) {
+                          return Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            child: GlassContainer(
+                              borderRadius: 20,
+                              padding: const EdgeInsets.all(12),
+                              animateBorder: false,
+                              child: Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
                                   ),
-                                  subtitle: sug['subtitle'] != null
-                                      ? Text(
-                                          sug['subtitle'] as String,
-                                          style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        )
-                                      : null,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      )
-                    else if (_isSuggestionsVisible &&
-                        _searchController.text.trim().length >= 2 &&
-                        !mapsProvider.isSearching &&
-                        mapsProvider.suggestions.isEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(top: 8),
-                        child: GlassContainer(
-                          borderRadius: 20,
-                          padding: const EdgeInsets.all(12),
-                          animateBorder: false,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.info_outline, color: Colors.grey, size: 18),
-                              const SizedBox(width: 8),
-                              Text(
-                                'No results found for "${_searchController.text.trim()}"',
-                                style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Searching chargers & locations...',
+                                    style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
+                            ),
+                          );
+                        } else if (_isSuggestionsVisible && mapsProvider.suggestions.isNotEmpty) {
+                          return Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            constraints: const BoxConstraints(maxHeight: 280),
+                            child: GlassContainer(
+                              borderRadius: 24,
+                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                              animateBorder: false,
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                padding: EdgeInsets.zero,
+                                itemCount: mapsProvider.suggestions.length,
+                                itemBuilder: (context, idx) {
+                                  final sug = mapsProvider.suggestions[idx];
+                                  final type = sug['type'] as String? ?? 'location';
+                                  
+                                  IconData leadingIcon;
+                                  Color iconColor;
+                                  if (type == 'network') {
+                                    leadingIcon = Icons.ev_station;
+                                    iconColor = AppColors.primary;
+                                  } else if (type == 'station') {
+                                    leadingIcon = Icons.electric_car;
+                                    iconColor = const Color(0xFF10B981);
+                                  } else if (type == 'connector') {
+                                    leadingIcon = Icons.power;
+                                    iconColor = const Color(0xFFF59E0B);
+                                  } else {
+                                    leadingIcon = Icons.location_on_outlined;
+                                    iconColor = AppColors.primary;
+                                  }
+
+                                  return GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      final desc = sug['description'] as String? ?? 'Unknown';
+                                      final src = sug['source'] as String? ?? 'unknown';
+                                      final lat = sug['latitude'] ?? 0.0;
+                                      final lng = sug['longitude'] ?? 0.0;
+
+                                      debugPrint('[SEARCH-CLICK-DIAGNOSTIC]');
+                                      debugPrint('Result clicked: $desc');
+                                      debugPrint('Index: $idx');
+                                      debugPrint('Source: $src');
+                                      debugPrint('Coordinates: $lat, $lng');
+
+                                      _searchFocusNode.unfocus();
+                                      if (mounted) {
+                                        setState(() {
+                                          _isSuggestionsVisible = false;
+                                        });
+                                      }
+                                      _searchController.text = desc;
+
+                                      mapsProvider.selectSuggestion(sug, (latLng, {zoom}) {
+                                        debugPrint('[SEARCH-CAMERA-DIAGNOSTIC] Moving camera to: ${latLng.latitude}, ${latLng.longitude}');
+                                        _mapController?.animateCamera(
+                                          CameraUpdate.newCameraPosition(
+                                            CameraPosition(target: latLng, zoom: zoom ?? 14.5),
+                                          ),
+                                        );
+                                        debugPrint('[MAP-INTERACTION] Camera moved: true');
+                                      });
+                                    },
+                                    child: ListTile(
+                                      leading: Icon(leadingIcon, color: iconColor, size: 20),
+                                      title: Text(
+                                        sug['description'] as String,
+                                        style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      subtitle: sug['subtitle'] != null
+                                          ? Text(
+                                              sug['subtitle'] as String,
+                                              style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            )
+                                          : null,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        } else if (_isSuggestionsVisible &&
+                            _searchController.text.trim().length >= 2 &&
+                            !mapsProvider.isSearching &&
+                            mapsProvider.suggestions.isEmpty) {
+                          return Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            child: GlassContainer(
+                              borderRadius: 20,
+                              padding: const EdgeInsets.all(12),
+                              animateBorder: false,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.info_outline, color: Colors.grey, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'No results found for "${_searchController.text.trim()}"',
+                                    style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      }
+                    ),
 
                     const SizedBox(height: 12),
 

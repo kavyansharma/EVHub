@@ -377,6 +377,10 @@ class MapsProvider extends ChangeNotifier {
 
       _suggestions = combinedSuggestions;
       _isSearching = false;
+      debugPrint(
+        '[SEARCH-REGRESSION-DIAGNOSTIC] Provider searchSuggestions finished for query: "$cleanQuery"\n'
+        '[SEARCH-COMBINE-DIAGNOSTIC] Total provider suggestions: ${_suggestions.length}',
+      );
       notifyListeners();
     });
   }
