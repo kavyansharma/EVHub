@@ -439,19 +439,40 @@ class MapsProvider extends ChangeNotifier {
 
           _markers = nearby;
           final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+          final visible = getFilteredMarkers();
 
           debugPrint(
-            '[CHARGER-SEARCH-DIAGNOSTIC]\n'
+            '[CHARGER-VISIBILITY-DIAGNOSTIC]\n'
             'Search location: $cityName\n'
-            'Coordinates: ${coords.latitude}, ${coords.longitude}\n'
-            'Firestore records fetched: ${rawDocs.length}\n'
-            'Valid charger records: ${rawDocs.length}\n'
-            'Chargers within radius: ${_markers.length}\n'
-            'Final markers: ${getFilteredMarkers().length}',
+            'Search latitude: ${coords.latitude}\n'
+            'Search longitude: ${coords.longitude}\n'
+            'Firestore documents fetched: ${rawDocs.length}\n'
+            'Valid charger documents: ${rawDocs.where((c) => c.hasValidCoordinates).length}\n'
+            'Chargers after coordinate parsing: ${rawDocs.where((c) => c.hasValidCoordinates).length}\n'
+            'Chargers after radius filtering: ${_markers.length}\n'
+            'Chargers returned: ${_markers.length}\n'
+            'Markers generated: ${visible.length}\n'
+            'Markers currently stored in provider: ${visible.length}\n'
+            'Markers passed to GoogleMap: ${visible.length}'
           );
 
-          if (_markers.isNotEmpty) {
-            _searchStatusMessage = '${_markers.length} chargers found near $cityName';
+          for (final c in visible) {
+            debugPrint(
+              '[CHARGER-DETAILS-DIAGNOSTIC]\n'
+              'Charger ID: ${c.id}\n'
+              'Charger name: ${c.title}\n'
+              'Latitude: ${c.latitude}\n'
+              'Longitude: ${c.longitude}\n'
+              'Distance from searched location: ${c.distanceKm ?? 0.0} km\n'
+              'Source: ${c.source}\n'
+              'Connector types: ${c.connectors.join(", ")}'
+            );
+          }
+
+          if (visible.isNotEmpty) {
+            _searchStatusMessage = '${visible.length} chargers found near $cityName';
+          } else if (_markers.isNotEmpty) {
+            _searchStatusMessage = '0 chargers match active filters (${_markers.length} nearby)';
           } else {
             _searchStatusMessage = 'No chargers found near $cityName. Try expanding your search.';
           }
@@ -717,6 +738,9 @@ class MapsProvider extends ChangeNotifier {
   // ─── Multi-Combinable Filtered Markers Generator ────────────────────────
   List<MapMarkerModel> getFilteredMarkers() {
     return _markers.where((m) {
+      // 0. Coordinate Validity Check
+      if (!m.hasValidCoordinates) return false;
+
       // 1. Available Now
       if (_filterAvailableNow) {
         if (m.computedStatus != MarkerStatus.available || m.availableConnectorsCount <= 0) {

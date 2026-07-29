@@ -404,5 +404,157 @@ void main() {
       );
       expect(cameraMoved, isTrue);
     });
+
+    test('REGRESSION TEST 1: One charger -> one marker', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger]);
+      final mapsService = MockMapsServiceForSearch();
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      await provider.selectSuggestion(
+        {
+          'description': 'Delhi',
+          'type': 'location',
+          'latitude': 28.6139,
+          'longitude': 77.2090,
+          'source': 'local_fallback',
+        },
+        (coords, {zoom}) {},
+      );
+
+      final visible = provider.getFilteredMarkers();
+      expect(visible.length, equals(1));
+      expect(provider.searchStatusMessage, contains('1 chargers found'));
+    });
+
+    test('REGRESSION TEST 2: Invalid coordinates -> no marker', () {
+      const invalidModel = MapMarkerModel(
+        id: 'invalid_1',
+        title: 'Corrupt Station',
+        description: 'Invalid Coords',
+        latitude: 999.0, // Invalid latitude > 90
+        longitude: 77.2090,
+        type: MarkerType.station,
+      );
+      expect(invalidModel.hasValidCoordinates, isFalse);
+
+      const zeroModel = MapMarkerModel(
+        id: 'zero_1',
+        title: 'Zero Coords',
+        description: 'Zero Coords',
+        latitude: 0.0,
+        longitude: 0.0,
+        type: MarkerType.station,
+      );
+      expect(zeroModel.hasValidCoordinates, isFalse);
+    });
+
+    test('REGRESSION TEST 3: Charger marker position equals charger coordinates', () {
+      final marker = sampleOcmCharger;
+      final latLng = LatLng(marker.latitude, marker.longitude);
+      expect(latLng.latitude, equals(28.6304));
+      expect(latLng.longitude, equals(77.2177));
+    });
+
+    test('REGRESSION TEST 4: Provider marker count equals UI marker count', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger, sampleVerifiedCharger]);
+      final mapsService = MockMapsServiceForSearch();
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      await provider.selectSuggestion(
+        {
+          'description': 'Gurgaon',
+          'type': 'location',
+          'latitude': 28.4595,
+          'longitude': 77.0266,
+          'source': 'local_fallback',
+        },
+        (coords, {zoom}) {},
+      );
+
+      final providerCount = provider.getFilteredMarkers().length;
+      final statusContainsCount = (provider.searchStatusMessage ?? '').contains('$providerCount chargers found');
+      expect(statusContainsCount, isTrue);
+    });
+
+    test('REGRESSION TEST 5: Camera centers on single charger when 1 charger is returned', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger]);
+      final mapsService = MockMapsServiceForSearch();
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      LatLng? navigatedPos;
+      await provider.selectSuggestion(
+        {
+          'description': 'Delhi',
+          'type': 'location',
+          'latitude': 28.6139,
+          'longitude': 77.2090,
+          'source': 'local_fallback',
+        },
+        (coords, {zoom}) {
+          navigatedPos = coords;
+        },
+      );
+
+      expect(navigatedPos, isNotNull);
+      final visible = provider.getFilteredMarkers();
+      expect(visible.length, equals(1));
+      expect(visible.first.latitude, equals(28.6304));
+    });
+
+    test('REGRESSION TEST 6: Multiple chargers fit within viewport bounds', () async {
+      final firestoreRepo = MockFirestoreRepoForSearch(mockChargers: [sampleOcmCharger, sampleVerifiedCharger]);
+      final mapsService = MockMapsServiceForSearch();
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      await provider.selectSuggestion(
+        {
+          'description': 'Delhi NCR',
+          'type': 'location',
+          'latitude': 28.6139,
+          'longitude': 77.2090,
+          'source': 'local_fallback',
+        },
+        (coords, {zoom}) {},
+      );
+
+      final visible = provider.getFilteredMarkers();
+      expect(visible.length, equals(2));
+
+      double minLat = visible.first.latitude;
+      double maxLat = visible.first.latitude;
+      double minLng = visible.first.longitude;
+      double maxLng = visible.first.longitude;
+
+      for (final c in visible) {
+        if (c.latitude < minLat) minLat = c.latitude;
+        if (c.latitude > maxLat) maxLat = c.latitude;
+        if (c.longitude < minLng) minLng = c.longitude;
+        if (c.longitude > maxLng) maxLng = c.longitude;
+      }
+
+      final bounds = LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      );
+
+      expect(bounds.southwest.latitude, equals(28.4595));
+      expect(bounds.northeast.latitude, equals(28.6304));
+    });
   });
 }

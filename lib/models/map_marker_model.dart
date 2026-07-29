@@ -74,6 +74,14 @@ class MapMarkerModel {
     return (total - avail).clamp(0, total);
   }
 
+  bool get hasValidCoordinates {
+    return latitude >= -90.0 &&
+        latitude <= 90.0 &&
+        longitude >= -180.0 &&
+        longitude <= 180.0 &&
+        (latitude != 0.0 || longitude != 0.0);
+  }
+
   MarkerStatus get computedStatus {
     if (status == MarkerStatus.offline) return MarkerStatus.offline;
     if (source == 'google_places' || !isVerified) return MarkerStatus.unknown;

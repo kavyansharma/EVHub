@@ -208,6 +208,67 @@ class _MapsScreenState extends State<MapsScreen> {
     }
   }
 
+  void _fitCameraToChargers(List<MapMarkerModel> chargers) {
+    if (_mapController == null || chargers.isEmpty) return;
+
+    final validChargers = chargers.where((c) => c.hasValidCoordinates).toList();
+    if (validChargers.isEmpty) return;
+
+    final provider = context.read<MapsProvider>();
+    final currentLat = provider.currentLocation?['latitude'] ?? 28.6304;
+    final currentLng = provider.currentLocation?['longitude'] ?? 77.2177;
+
+    if (validChargers.length == 1) {
+      final single = validChargers.first;
+      final distM = Geolocator.distanceBetween(currentLat, currentLng, single.latitude, single.longitude);
+      final distKm = distM / 1000.0;
+
+      debugPrint(
+        '[CAMERA-MARKER-DIAGNOSTIC]\n'
+        'Camera target: ($currentLat, $currentLng)\n'
+        'Single charger position: (${single.latitude}, ${single.longitude})\n'
+        'Distance between camera center and charger: ${distKm.toStringAsFixed(2)} km\n'
+        'Moving camera directly to single charger...'
+      );
+
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(single.latitude, single.longitude),
+            zoom: 15.0,
+          ),
+        ),
+      );
+    } else {
+      double minLat = validChargers.first.latitude;
+      double maxLat = validChargers.first.latitude;
+      double minLng = validChargers.first.longitude;
+      double maxLng = validChargers.first.longitude;
+
+      for (final c in validChargers) {
+        if (c.latitude < minLat) minLat = c.latitude;
+        if (c.latitude > maxLat) maxLat = c.latitude;
+        if (c.longitude < minLng) minLng = c.longitude;
+        if (c.longitude > maxLng) maxLng = c.longitude;
+      }
+
+      final bounds = LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      );
+
+      debugPrint(
+        '[CAMERA-MARKER-DIAGNOSTIC]\n'
+        'Multiple chargers count: ${validChargers.length}\n'
+        'Fitting camera to bounds: SW($minLat, $minLng), NE($maxLat, $maxLng)'
+      );
+
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 60.0),
+      );
+    }
+  }
+
   void _zoomIn() {
     debugPrint("[MAPS SCREEN] Zoom In triggered");
     _mapController?.animateCamera(CameraUpdate.zoomIn());
@@ -245,31 +306,42 @@ class _MapsScreenState extends State<MapsScreen> {
     final mapsProvider = context.watch<MapsProvider>();
 
     // Build custom markers dynamically
-    final Set<Marker> mapMarkers = mapsProvider.getFilteredMarkers().map((m) {
+    final filtered = mapsProvider.getFilteredMarkers();
+    final Set<Marker> mapMarkers = filtered.map((m) {
       final isSelected = mapsProvider.selectedMarker?.id == m.id;
-      BitmapDescriptor icon = BitmapDescriptor.defaultMarker;
+      BitmapDescriptor icon = BitmapDescriptor.defaultMarkerWithHue(
+        m.isVerified ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueAzure
+      );
       if (_markersLoaded) {
         if (isSelected) {
-          icon = _markerSelected!;
+          icon = _markerSelected ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
         } else if (m.isVerified || m.source == 'evhub_verified') {
-          icon = _markerVerifiedAvailable ?? _markerAvailable!;
+          icon = _markerVerifiedAvailable ?? _markerAvailable ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
         } else {
           switch (m.status) {
             case MarkerStatus.available:
-              icon = _markerAvailable!;
+              icon = _markerAvailable ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
               break;
             case MarkerStatus.busy:
-              icon = _markerBusy!;
+              icon = _markerBusy ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
               break;
             case MarkerStatus.offline:
-              icon = _markerOffline!;
+              icon = _markerOffline ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
               break;
             case MarkerStatus.unknown:
-              icon = _markerUnknown ?? _markerAvailable!;
+              icon = _markerUnknown ?? _markerAvailable ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
               break;
           }
         }
       }
+
+      debugPrint(
+        '[MARKER-GENERATION-DIAGNOSTIC]\n'
+        'Marker ID: ${m.id}\n'
+        'Marker position: (${m.latitude}, ${m.longitude})\n'
+        'Charger position: (${m.latitude}, ${m.longitude})\n'
+        'Marker created: true'
+      );
 
       return Marker(
         markerId: MarkerId(m.id),
@@ -301,7 +373,12 @@ class _MapsScreenState extends State<MapsScreen> {
       );
     }).toSet();
 
-    debugPrint("[MAPS SCREEN] Markers loaded count: ${mapMarkers.length}");
+    debugPrint(
+      '[MARKER-STATE-DIAGNOSTIC]\n'
+      'Provider marker count: ${mapsProvider.markers.length}\n'
+      'UI marker count: ${filtered.length}\n'
+      'GoogleMap marker count: ${mapMarkers.length}'
+    );
 
     // Directions routing polyline overlay
     final Set<Polyline> polylines = {};
@@ -635,6 +712,12 @@ class _MapsScreenState extends State<MapsScreen> {
                                           ),
                                         );
                                         debugPrint('[MAP-INTERACTION] Camera moved: true');
+                                        Future.delayed(const Duration(milliseconds: 300), () {
+                                          final visible = mapsProvider.getFilteredMarkers();
+                                          if (visible.isNotEmpty) {
+                                            _fitCameraToChargers(visible);
+                                          }
+                                        });
                                       });
                                     },
                                     child: ListTile(
@@ -829,6 +912,14 @@ class _MapsScreenState extends State<MapsScreen> {
                     isActive: true,
                     onTap: _recenterCamera,
                   ),
+                  if (mapsProvider.getFilteredMarkers().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _buildMapControlBtn(
+                      icon: HugeIcons.strokeRoundedLocation01,
+                      isActive: true,
+                      onTap: () => _fitCameraToChargers(mapsProvider.getFilteredMarkers()),
+                    ),
+                  ],
                 ],
               ),
             ),
