@@ -963,26 +963,42 @@ class MapsProvider extends ChangeNotifier {
 
   void clearTrip() => clearRoute();
 
-  // ─── Selected marker ──────────────────────────────────────────────────────
+  // ─── Selected marker & MarkerId lookup ─────────────────────────────────────
+  MapMarkerModel? getMarkerById(String id) {
+    try {
+      return _markers.firstWhere((m) => m.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void selectMarkerById(String id) {
+    final found = getMarkerById(id);
+    if (found != null) {
+      setSelectedMarker(found);
+    }
+  }
+
   void setSelectedMarker(MapMarkerModel? marker) {
     _selectedMarker = marker;
     _nearbyPlaces = [];
+    notifyListeners();
     if (marker != null) {
       fetchNearbyPlacesForSelected();
     }
-    notifyListeners();
   }
 
   Future<void> fetchNearbyPlacesForSelected() async {
     if (_selectedMarker == null) return;
     _isLoadingPlaces = true;
-    notifyListeners();
-
     try {
-      _nearbyPlaces = await _placesService.getNearbyPlaces(
+      final places = await _placesService.getNearbyPlaces(
         _selectedMarker!.latitude,
         _selectedMarker!.longitude,
       );
+      if (_selectedMarker != null) {
+        _nearbyPlaces = places;
+      }
     } catch (e) {
       debugPrint('[MapsProvider] Error fetching nearby places: $e');
     } finally {
