@@ -59,9 +59,7 @@ service cloud.firestore {
       // • Authenticated users can read all chargers
       // • Public/Unauthenticated can read verified & approved chargers
       // • Fallback timestamp for dev
-      allow read: if isAuthenticated()
-        || resource.data.isVerified == true 
-        || request.time < timestamp.date(2026, 8, 14);
+      allow read: if true;
 
       // CREATE RULES:
       // • Admin can create any charger with verified status

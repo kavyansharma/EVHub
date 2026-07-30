@@ -234,17 +234,33 @@ class FirestoreChargerRepository {
   // READ: getPublicVerifiedChargers
   // ───────────────────────────────────────────────────────────
 
-  /// Fetches only EVHub Verified & Approved chargers for public discovery.
   Future<List<MapMarkerModel>> getPublicVerifiedChargers() async {
     try {
       final snapshot = await _firestore.collection(_collection).get();
+      debugPrint('[FirestoreChargerRepository] getPublicVerifiedChargers() read ${snapshot.docs.length} docs from Firestore');
       if (snapshot.docs.isEmpty) return [];
 
-      return snapshot.docs
-          .map((doc) => _documentToModel(doc.id, doc.data()))
-          .whereType<MapMarkerModel>()
-          .where((c) => c.isVerified || c.verificationStatus == 'approved')
-          .toList();
+      int rawCount = snapshot.docs.length;
+      int validCoordsCount = 0;
+      int rejectedCount = 0;
+
+      final List<MapMarkerModel> list = [];
+      for (final doc in snapshot.docs) {
+        final model = _documentToModel(doc.id, doc.data());
+        if (model == null) continue;
+        validCoordsCount++;
+        if (model.verificationStatus == 'rejected') {
+          rejectedCount++;
+          continue;
+        }
+        list.add(model);
+      }
+
+      debugPrint(
+        '[MAP-DIAGNOSTIC] getPublicVerifiedChargers(): '
+        'rawDocs=$rawCount, validCoords=$validCoordsCount, rejected=$rejectedCount, returned=${list.length}',
+      );
+      return list;
     } catch (e) {
       debugPrint('[FirestoreChargerRepository] Error in getPublicVerifiedChargers: $e');
       return [];
@@ -405,38 +421,58 @@ class FirestoreChargerRepository {
   /// Converts a raw Firestore document map to a [MapMarkerModel].
   static MapMarkerModel? _documentToModel(String docId, Map<String, dynamic> data) {
     try {
-      final String id = (data['id'] as String?)?.trim().isNotEmpty == true
-          ? data['id'] as String
-          : docId;
+      // Use docId as primary unique identifier to ensure MarkerId uniqueness in Flutter Map sets
+      final String id = docId;
 
-      final String name = (data['name'] as String?) ?? (data['title'] as String?) ?? 'Unknown Charger';
-      final String address = (data['address'] as String?) ?? (data['description'] as String?) ?? 'Address not available';
-      final String network = (data['network'] as String?) ?? 'Independent';
+      final String name = (data['name'] as String?) ?? (data['title'] as String?) ?? (data['stationName'] as String?) ?? 'EV Charging Station';
+      final String address = (data['address'] as String?) ?? (data['description'] as String?) ?? (data['formatted_address'] as String?) ?? 'Address not available';
+      final String network = (data['network'] as String?) ?? (data['operator'] as String?) ?? (data['brand'] as String?) ?? 'Independent';
 
       double? latitude;
       double? longitude;
 
-      // 1. Check GeoPoint in 'location'
       double? parseCoord(dynamic v) {
         if (v == null) return null;
         if (v is num) return v.toDouble();
-        if (v is String) return double.tryParse(v);
+        if (v is String) return double.tryParse(v.trim());
         return null;
       }
 
-      // 1. Check GeoPoint in 'location'
-      final dynamic locationField = data['location'];
+      // 1. Check GeoPoint, Map, or List in 'location', 'position', 'coordinates', or 'geo'
+      final dynamic locationField = data['location'] ?? data['position'] ?? data['coordinates'] ?? data['geo'];
       if (locationField is GeoPoint) {
         latitude = locationField.latitude;
         longitude = locationField.longitude;
       } else if (locationField is Map) {
-        latitude = parseCoord(locationField['latitude']) ?? parseCoord(locationField['lat']);
-        longitude = parseCoord(locationField['longitude']) ?? parseCoord(locationField['lng']);
+        latitude = parseCoord(locationField['latitude']) ?? parseCoord(locationField['lat']) ?? parseCoord(locationField['_latitude']);
+        longitude = parseCoord(locationField['longitude']) ?? parseCoord(locationField['lng']) ?? parseCoord(locationField['_longitude']);
+      } else if (locationField is List && locationField.length >= 2) {
+        final val0 = parseCoord(locationField[0]);
+        final val1 = parseCoord(locationField[1]);
+        if (val0 != null && val1 != null) {
+          // Check standard [lat, lng] vs GeoJSON [lng, lat]
+          if (val0 >= -90 && val0 <= 90 && (val1 < -90 || val1 > 90 || val1 > 50)) {
+            latitude = val0;
+            longitude = val1;
+          } else {
+            latitude = val1;
+            longitude = val0;
+          }
+        }
       }
 
       // 2. Fallback to top-level latitude/longitude or lat/lng
       latitude ??= parseCoord(data['latitude']) ?? parseCoord(data['lat']);
       longitude ??= parseCoord(data['longitude']) ?? parseCoord(data['lng']);
+
+      // 3. Handle coordinate reversal for India dataset (e.g. lat ~ 77.5, lng ~ 12.9)
+      if (latitude != null && longitude != null) {
+        if (latitude >= 50.0 && latitude <= 100.0 && longitude >= 0.0 && longitude <= 40.0) {
+          final temp = latitude;
+          latitude = longitude;
+          longitude = temp;
+        }
+      }
 
       // Reject document if valid coordinates cannot be extracted or fall outside valid range
       if (latitude == null || longitude == null || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {

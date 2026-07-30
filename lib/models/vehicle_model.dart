@@ -17,13 +17,17 @@ class VehicleModel {
   final String nickname;
   final bool isDefault;
   
-  // Phase 6 Additions
+  // Phase 6 & Phase 4 Step 2A Additions
   final String vehicleColor;
   final double currentBatteryPct;
   final double averageEfficiency; // Wh/km
   final bool fastChargingSupport;
   final int wheelSize;
   final String drivingStyle; // e.g., 'Eco', 'Normal', 'Sport'
+  final double? usableBatteryCapacityKWh;
+
+  double get usableBatteryCapacity => usableBatteryCapacityKWh ?? (batteryCapacity * 0.95);
+  String get displayName => '$manufacturer $model $variant'.trim();
 
   const VehicleModel({
     required this.id,
@@ -47,6 +51,7 @@ class VehicleModel {
     this.fastChargingSupport = true,
     this.wheelSize = 18,
     this.drivingStyle = 'Normal',
+    this.usableBatteryCapacityKWh,
   });
 
   factory VehicleModel.fromFirestore(DocumentSnapshot doc) {

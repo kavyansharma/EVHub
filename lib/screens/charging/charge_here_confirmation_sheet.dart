@@ -373,9 +373,10 @@ class _ChargeHereConfirmationSheetState extends State<ChargeHereConfirmationShee
                 onPressed: () async {
                   final userId = authProvider.user?.id ?? 'default_user';
                   await sessionProvider.startSession(
-                    userId,
-                    widget.charger.id,
-                    _selectedConnector,
+                    userId: userId,
+                    chargerId: widget.charger.id,
+                    chargerName: widget.charger.title,
+                    connectorType: _selectedConnector,
                   );
                   if (context.mounted) {
                     Navigator.pop(context); // Close sheet

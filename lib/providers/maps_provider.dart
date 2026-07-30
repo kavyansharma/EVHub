@@ -2,12 +2,24 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/ev_vehicle_model.dart';
+import '../models/location_search_result.dart';
 import '../models/map_marker_model.dart';
+import '../models/recommended_charging_stop.dart';
+import '../models/vehicle_model.dart';
 import '../repositories/firestore_charger_repository.dart';
 import '../repositories/hybrid_charger_repository.dart';
 import '../repositories/maps_repository.dart';
+import '../services/charging_stop_recommendation_service.dart';
 import '../services/maps_service.dart';
 import '../services/places_service.dart';
+import '../services/trip_energy_calculator.dart';
+import '../services/vehicle_service.dart';
+import '../models/smart_trip_cost_settings.dart';
+import '../services/smart_charger_ranking_service.dart';
+import '../services/navigation_launcher_service.dart';
+import 'dart:convert';
 
 /// ╔═══════════════════════════════════════════════════════════════════
 /// DEBUG FLAG: When true, disables the radius filter and shows EVERY
@@ -34,6 +46,7 @@ class MapsProvider extends ChangeNotifier {
 
   List<MapMarkerModel> _markers = [];
   Map<String, double>? _currentLocation;
+  String _discoveryMode = 'gps'; // 'gps', 'search', 'route'
   bool _isLoading = false;
   bool _isLoadingPlaces = false;
   bool _isLoadingRoute = false;
@@ -47,10 +60,32 @@ class MapsProvider extends ChangeNotifier {
   String? _searchStatusMessage;
   bool _isSearching = false;
 
-  // Decoded routing variables
+  // Decoded routing & trip planner variables
   List<LatLng> _routePoints = [];
   String? _routeDistance;
   String? _routeDuration;
+  LocationSearchResult? _tripOrigin;
+  LocationSearchResult? _tripDestination;
+
+  // Phase 4 Step 2A EV Vehicle & Battery Intelligence
+  VehicleModel? _selectedVehicle;
+  double _currentBatteryPct = 80.0;
+  double _safetyBufferPct = 15.0;
+
+  // Phase 4 Step 2B Smart Trip Planning
+  SmartTripResult? _smartTripResult;
+  bool _isCalculatingSmartTrip = false;
+  bool _showAllChargersWhenNoCompatible = false;
+  SmartTripCostSettings _costSettings = const SmartTripCostSettings();
+
+  final ChargingStopRecommendationService _recommendationService =
+      ChargingStopRecommendationService();
+
+  // Phase 4 Step 4 — Ranking, Sorting, Favorites & Navigation
+  SortOption _currentSortOption = SortOption.bestMatch;
+  final Set<String> _favoriteChargerIds = {};
+  final SmartChargerRankingService _rankingService = const SmartChargerRankingService();
+  final NavigationLauncherService _navigationService = const NavigationLauncherService();
 
   // Selected station bottom sheet info
   MapMarkerModel? _selectedMarker;
@@ -91,11 +126,14 @@ class MapsProvider extends ChangeNotifier {
               mapsService: mapsService,
             ),
         _mapsRepository = mapsRepository,
-        _mapsService = mapsService;
+        _mapsService = mapsService {
+    loadTripVehiclePreferences();
+  }
 
   // Getters
   List<MapMarkerModel> get markers => _markers;
   Map<String, double>? get currentLocation => _currentLocation;
+  String get discoveryMode => _discoveryMode;
   bool get isLoading => _isLoading;
   bool get isLoadingPlaces => _isLoadingPlaces;
   bool get isLoadingRoute => _isLoadingRoute;
@@ -107,6 +145,34 @@ class MapsProvider extends ChangeNotifier {
   List<LatLng> get routePoints => _routePoints;
   String? get routeDistance => _routeDistance;
   String? get routeDuration => _routeDuration;
+  LocationSearchResult? get tripOrigin => _tripOrigin;
+  LocationSearchResult? get tripDestination => _tripDestination;
+  VehicleModel? get selectedVehicle => _selectedVehicle;
+  double get currentBatteryPct => _currentBatteryPct;
+  double get safetyBufferPct => _safetyBufferPct;
+
+  // Phase 4 Step 2B — Smart Trip getters
+  SmartTripResult? get smartTripResult => _smartTripResult;
+  bool get isCalculatingSmartTrip => _isCalculatingSmartTrip;
+  bool get showAllChargersWhenNoCompatible => _showAllChargersWhenNoCompatible;
+  SmartTripCostSettings get costSettings => _costSettings;
+  List<RecommendedChargingStop> get recommendedStops =>
+      _smartTripResult?.recommendedStops ?? [];
+
+  TripEnergyAnalysisResult get tripEnergyAnalysis {
+    double? distKm;
+    if (_routeDistance != null) {
+      final cleanText = _routeDistance!.replaceAll(RegExp(r'[^0-9.]'), '');
+      distKm = double.tryParse(cleanText);
+    }
+
+    return TripEnergyCalculator.analyze(
+      vehicle: _selectedVehicle,
+      batteryPct: _currentBatteryPct,
+      tripDistanceKm: distKm,
+      safetyBufferPct: _safetyBufferPct,
+    );
+  }
   MapMarkerModel? get selectedMarker => _selectedMarker;
   List<PlaceModel> get nearbyPlaces => _nearbyPlaces;
 
@@ -124,6 +190,57 @@ class MapsProvider extends ChangeNotifier {
   bool get filterOpenNow => _filterOpenNow;
   double? get maxPriceFilter => _maxPriceFilter;
   double? get maxRadiusFilter => _maxRadiusFilter;
+
+  // Phase 4 Step 4 — Getters & Actions
+  SortOption get currentSortOption => _currentSortOption;
+  Set<String> get favoriteChargerIds => _favoriteChargerIds;
+
+  void setSortOption(SortOption option) {
+    _currentSortOption = option;
+    notifyListeners();
+  }
+
+  bool isFavorite(String chargerId) => _favoriteChargerIds.contains(chargerId);
+
+  Future<void> toggleFavorite(String chargerId) async {
+    if (_favoriteChargerIds.contains(chargerId)) {
+      _favoriteChargerIds.remove(chargerId);
+    } else {
+      _favoriteChargerIds.add(chargerId);
+    }
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('favorite_charger_ids', _favoriteChargerIds.toList());
+    } catch (_) {}
+  }
+
+  Future<void> loadFavoritesFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('favorite_charger_ids');
+      if (saved != null) {
+        _favoriteChargerIds.clear();
+        _favoriteChargerIds.addAll(saved);
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  List<SmartChargerRecommendation> getRankedChargers() {
+    final filtered = getFilteredMarkers();
+    return _rankingService.rankAndSort(
+      chargers: filtered,
+      sortOption: _currentSortOption,
+      userLocation: _currentLocation,
+      vehicleConnectors: _selectedVehicle?.connectorTypes,
+      isRouteMode: _discoveryMode == 'route',
+    );
+  }
+
+  Future<bool> launchExternalNavigation(MapMarkerModel charger) async {
+    return _navigationService.launchNavigation(charger.latitude, charger.longitude);
+  }
 
   int get estimatedBatteryUsage {
     if (_routeDistance == null) return 0;
@@ -162,6 +279,7 @@ class MapsProvider extends ChangeNotifier {
   }
 
   void _updateFirestoreMarkersInList(List<MapMarkerModel> verifiedChargers) {
+    if (_discoveryMode != 'gps') return; // Do not overwrite search or route markers
     if (_markers.isEmpty) {
       _markers = verifiedChargers;
       notifyListeners();
@@ -257,13 +375,19 @@ class MapsProvider extends ChangeNotifier {
       debugPrint('[MapsProvider] refreshStations() skipped — currentLocation is null');
       return;
     }
+    if (_discoveryMode != 'gps' && radiusKm == null) {
+      debugPrint('[MapsProvider] refreshStations() skipped — active discovery mode is $_discoveryMode');
+      return;
+    }
+    _discoveryMode = 'gps';
     try {
-      debugPrint('[MapsProvider] ── refreshStations() START ──');
+      debugPrint('[MapsProvider] ── refreshStations() START (Mode: GPS) ──');
 
       final userLat = _currentLocation!['latitude']!;
       final userLng = _currentLocation!['longitude']!;
 
       final rawFirestoreDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+      final validCoordsDocs = rawFirestoreDocs.where((c) => c.hasValidCoordinates).toList();
 
       final chargers = await _hybridChargerRepository.searchNearbyChargers(
         latitude: userLat,
@@ -276,16 +400,17 @@ class MapsProvider extends ChangeNotifier {
 
       debugPrint(
         '[MAP-DIAGNOSTIC]\n'
-        'Firestore chargers fetched: ${rawFirestoreDocs.length}\n'
-        'Valid chargers: ${rawFirestoreDocs.length}\n'
-        'Invalid coordinates: 0\n'
-        'Chargers inside current map viewport: ${_markers.length}\n'
-        'Chargers inside nearby radius: ${_markers.length}\n'
-        'Markers generated: ${_markers.length}\n'
-        'Markers rendered: $filteredCount',
+        'Mode: GPS\n'
+        'Number of chargers fetched from Firestore: ${rawFirestoreDocs.length}\n'
+        'Number of valid chargers after coordinate validation: ${validCoordsDocs.length}\n'
+        'Current map center: ($userLat, $userLng)\n'
+        'Search location coordinates: N/A (GPS Mode)\n'
+        'GPS coordinates: ($userLat, $userLng)\n'
+        'Number of chargers returned by nearby filtering: ${_markers.length}\n'
+        'Number of Google Maps Marker objects generated: $filteredCount',
       );
 
-      _searchStatusMessage = '${_markers.length} chargers found';
+      _searchStatusMessage = '${_markers.length} chargers found near your location';
       notifyListeners();
     } catch (e) {
       debugPrint('[MapsProvider] Error refreshing stations: $e');
@@ -415,6 +540,7 @@ class MapsProvider extends ChangeNotifier {
         coords ??= await _mapsService.getCoordinatesFromAddress(description);
 
         if (coords != null) {
+          _discoveryMode = 'search';
           final cityName = description.split(',').first.trim();
           _currentLocation = {
             'latitude': coords.latitude,
@@ -525,6 +651,7 @@ class MapsProvider extends ChangeNotifier {
       coords ??= await _mapsService.getCoordinatesFromAddress(placeIdOrQuery);
 
       if (coords != null) {
+        _discoveryMode = 'search';
         onCoordinatesFetched(coords);
         final cleanName = placeIdOrQuery.split(',').first.trim();
         _currentLocation = {
@@ -585,6 +712,7 @@ class MapsProvider extends ChangeNotifier {
   }
 
   Future<void> calculateRouteBetween(LatLng origin, LatLng dest) async {
+    _discoveryMode = 'route';
     _isLoadingRoute = true;
     _isLoading = true;
     notifyListeners();
@@ -596,6 +724,9 @@ class MapsProvider extends ChangeNotifier {
         _routeDistance = directions['distance'] as String;
         _routeDuration = directions['duration'] as String;
 
+        final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
+        final validCoordsDocs = rawDocs.where((c) => c.hasValidCoordinates).toList();
+
         // Fetch route corridor chargers within 10 km corridor of the polyline
         final routeChargers = await _hybridChargerRepository.searchRouteCorridorChargers(
           polylinePoints: _routePoints,
@@ -603,6 +734,19 @@ class MapsProvider extends ChangeNotifier {
         );
         _markers = routeChargers;
         final visible = getFilteredMarkers();
+
+        debugPrint(
+          '[MAP-DIAGNOSTIC]\n'
+          'Mode: Route\n'
+          'Origin: (${origin.latitude}, ${origin.longitude})\n'
+          'Destination: (${dest.latitude}, ${dest.longitude})\n'
+          'Polyline points: ${_routePoints.length}\n'
+          'Number of chargers fetched from Firestore: ${rawDocs.length}\n'
+          'Number of valid chargers after coordinate validation: ${validCoordsDocs.length}\n'
+          'Number of chargers returned by route corridor filtering (10km): ${_markers.length}\n'
+          'Number of Google Maps Marker objects generated: ${visible.length}',
+        );
+
         _searchStatusMessage = '${visible.length} chargers found along 10 km route corridor';
       }
     } catch (e) {
@@ -615,16 +759,205 @@ class MapsProvider extends ChangeNotifier {
     }
   }
 
+  void setTripOrigin(LocationSearchResult? origin) {
+    _tripOrigin = origin;
+    notifyListeners();
+  }
+
+  void setTripDestination(LocationSearchResult? dest) {
+    _tripDestination = dest;
+    notifyListeners();
+  }
+
+  Future<void> loadTripVehiclePreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedVehicleId = prefs.getString('trip_vehicle_id');
+      final savedBatteryPct = prefs.getDouble('trip_battery_pct');
+      final savedSafetyBufferPct = prefs.getDouble('trip_safety_buffer_pct');
+
+      if (savedBatteryPct != null) {
+        _currentBatteryPct = savedBatteryPct.clamp(0.0, 100.0);
+      }
+      if (savedSafetyBufferPct != null) {
+        _safetyBufferPct = savedSafetyBufferPct;
+      }
+
+      final availableVehicles = VehicleService.indianEVEcosystem;
+      if (savedVehicleId != null) {
+        _selectedVehicle = availableVehicles.firstWhere(
+          (v) => v.id == savedVehicleId,
+          orElse: () => availableVehicles.first,
+        );
+      } else {
+        _selectedVehicle = availableVehicles.first;
+      }
+      
+      // Phase 4 Step 3 Cost Settings
+      final savedCostSettings = prefs.getString('trip_cost_settings');
+      if (savedCostSettings != null) {
+        try {
+          _costSettings = SmartTripCostSettings.fromJson(json.decode(savedCostSettings));
+        } catch (e) {
+          debugPrint('[MapsProvider] Error parsing cost settings: $e');
+        }
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[MapsProvider] Load vehicle preferences error: $e');
+    }
+  }
+
+  Future<void> setSelectedVehicle(VehicleModel? vehicle) async {
+    _selectedVehicle = vehicle;
+    notifyListeners();
+
+    if (vehicle != null) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('trip_vehicle_id', vehicle.id);
+      } catch (e) {
+        debugPrint('[MapsProvider] Save vehicle error: $e');
+      }
+    }
+
+    // Phase 4 Step 2B: Recalculate smart trip when vehicle changes
+    await recalculateSmartTripIfActive();
+  }
+
+  Future<void> setCurrentBatteryPct(double pct) async {
+    _currentBatteryPct = pct.clamp(0.0, 100.0);
+    notifyListeners();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('trip_battery_pct', _currentBatteryPct);
+    } catch (e) {
+      debugPrint('[MapsProvider] Save battery % error: $e');
+    }
+
+    // Phase 4 Step 2B: Recalculate smart trip when battery changes
+    await recalculateSmartTripIfActive();
+  }
+
+  Future<void> setSafetyBufferPct(double bufferPct) async {
+    _safetyBufferPct = bufferPct;
+    notifyListeners();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('trip_safety_buffer_pct', _safetyBufferPct);
+    } catch (e) {
+      debugPrint('[MapsProvider] Save safety buffer error: $e');
+    }
+  }
+
+  Future<void> updateCostSettings(SmartTripCostSettings newSettings) async {
+    _costSettings = newSettings;
+    notifyListeners();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('trip_cost_settings', json.encode(_costSettings.toJson()));
+    } catch (e) {
+      debugPrint('[MapsProvider] Save cost settings error: $e');
+    }
+
+    // Recalculate smart trip since costs changed
+    await recalculateSmartTripIfActive();
+  }
+
+  Future<void> planTrip({
+    required LocationSearchResult origin,
+    required LocationSearchResult destination,
+  }) async {
+    _tripOrigin = origin;
+    _tripDestination = destination;
+    _discoveryMode = 'route';
+    _smartTripResult = null;
+    notifyListeners();
+
+    await calculateRouteBetween(origin.coordinates, destination.coordinates);
+
+    // Phase 4 Step 2B: Calculate smart charging stop recommendations
+    if (_routePoints.isNotEmpty && _selectedVehicle != null) {
+      await _calculateSmartTrip(origin.coordinates, destination.coordinates);
+    }
+  }
+
+  /// Calculates smart charging stop recommendations using the existing
+  /// route corridor chargers already fetched into [_markers].
+  Future<void> _calculateSmartTrip(LatLng origin, LatLng dest) async {
+    if (_selectedVehicle == null || _routePoints.isEmpty) return;
+    _isCalculatingSmartTrip = true;
+    notifyListeners();
+
+    try {
+      final evVehicle = EVVehicleModel.fromVehicleModel(_selectedVehicle!);
+      final result = _recommendationService.recommend(
+        origin: origin,
+        destination: dest,
+        polylinePoints: _routePoints,
+        vehicle: evVehicle,
+        currentBatteryPct: _currentBatteryPct,
+        routeChargers: _markers,
+        costSettings: _costSettings,
+        safetyReservePct: _safetyBufferPct,
+        preferCompatibleOnly: !_showAllChargersWhenNoCompatible,
+      );
+      _smartTripResult = result;
+      debugPrint(
+          '[MapsProvider] Smart trip: ${result.recommendedStops.length} stops, '
+          'charging required: ${result.chargingRequired}');
+    } catch (e) {
+      debugPrint('[MapsProvider] Smart trip calculation error: $e');
+    } finally {
+      _isCalculatingSmartTrip = false;
+      notifyListeners();
+    }
+  }
+
+  /// Recalculates smart trip when vehicle or battery changes after a route is active.
+  Future<void> recalculateSmartTripIfActive() async {
+    if (_discoveryMode != 'route' ||
+        _routePoints.isEmpty ||
+        _tripOrigin == null ||
+        _tripDestination == null) {
+      return;
+    }
+    await _calculateSmartTrip(
+      _tripOrigin!.coordinates,
+      _tripDestination!.coordinates,
+    );
+  }
+
+  /// Toggle show-all-chargers fallback when no compatible charger found.
+  Future<void> setShowAllChargersWhenNoCompatible(bool value) async {
+    _showAllChargersWhenNoCompatible = value;
+    notifyListeners();
+    await recalculateSmartTripIfActive();
+  }
+
   void clearRoute() {
+    _discoveryMode = 'gps';
     _routePoints = [];
     _routeDistance = null;
     _routeDuration = null;
+    _tripOrigin = null;
+    _tripDestination = null;
+    // Phase 4 Step 2B: Clear smart trip state
+    _smartTripResult = null;
+    _isCalculatingSmartTrip = false;
+    _showAllChargersWhenNoCompatible = false;
     if (_currentLocation != null) {
       fetchCurrentLocationAndStations();
     } else {
       notifyListeners();
     }
   }
+
+  void clearTrip() => clearRoute();
 
   // ─── Selected marker ──────────────────────────────────────────────────────
   void setSelectedMarker(MapMarkerModel? marker) {

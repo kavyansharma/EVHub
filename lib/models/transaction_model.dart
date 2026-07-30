@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'wallet_transaction_model.dart';
 
 enum TransactionType { topup, charge, refund }
 
@@ -25,7 +26,7 @@ class TransactionModel {
       '${isCredit ? '+' : '-'}₹${amount.toStringAsFixed(2)}';
 
   factory TransactionModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
     return TransactionModel(
       id: doc.id,
       userId: data['userId'] ?? '',
@@ -44,6 +45,33 @@ class TransactionModel {
       'description': description,
       'timestamp': FieldValue.serverTimestamp(),
     };
+  }
+
+  /// Converts a [WalletTransactionModel] to legacy [TransactionModel].
+  factory TransactionModel.fromWalletTransaction(WalletTransactionModel walletTx) {
+    TransactionType legacyType;
+    switch (walletTx.type) {
+      case WalletTransactionType.topUp:
+      case WalletTransactionType.cashback:
+        legacyType = TransactionType.topup;
+        break;
+      case WalletTransactionType.refund:
+        legacyType = TransactionType.refund;
+        break;
+      case WalletTransactionType.chargingPayment:
+      case WalletTransactionType.adjustment:
+        legacyType = TransactionType.charge;
+        break;
+    }
+
+    return TransactionModel(
+      id: walletTx.transactionId,
+      userId: walletTx.userId,
+      type: legacyType,
+      amount: walletTx.amount,
+      description: walletTx.description,
+      timestamp: walletTx.createdAt,
+    );
   }
 
   static TransactionType _typeFromString(String s) {

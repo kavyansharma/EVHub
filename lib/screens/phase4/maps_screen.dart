@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -16,51 +15,20 @@ import '../../core/constants/map_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../core/widgets/charger_source_badge.dart';
+import '../../core/widgets/charger_marker_factory.dart';
 import '../../models/map_marker_model.dart';
 import '../../services/maps_service.dart';
+import '../../services/smart_charger_ranking_service.dart';
 import '../charging/live_charging_screen.dart';
 import 'charger_details_screen.dart';
 
-// Helper function to dynamically generate circular glow markers
+// Helper function to dynamically generate high-DPI EV charging station pin markers
 Future<BitmapDescriptor> createCustomMarker(Color color, bool isSelected, {bool isVerified = false}) async {
-  final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
-  final Canvas canvas = Canvas(pictureRecorder);
-  final double radius = isSelected ? 30.0 : 22.0;
-  
-  // Paint shadow/glow
-  final Paint shadowPaint = Paint()
-    ..color = isVerified 
-        ? const Color(0xFF10B981).withOpacity(isSelected ? 0.7 : 0.4)
-        : color.withOpacity(isSelected ? 0.6 : 0.3)
-    ..maskFilter = const MaskFilter.blur(ui.BlurStyle.normal, 6);
-  canvas.drawCircle(Offset(radius + 10, radius + 10), radius, shadowPaint);
-
-  // Outer border ring: Emerald/gold for verified, White for discovered
-  final Paint borderPaint = Paint()
-    ..color = isVerified ? const Color(0xFF10B981) : Colors.white
-    ..style = PaintingStyle.fill;
-  canvas.drawCircle(Offset(radius + 10, radius + 10), radius, borderPaint);
-
-  // Paint inner circle
-  final Paint fillPaint = Paint()
-    ..color = color
-    ..style = PaintingStyle.fill;
-  canvas.drawCircle(Offset(radius + 10, radius + 10), radius - (isSelected ? 5 : 3), fillPaint);
-
-  // If selected, draw center core
-  if (isSelected) {
-    final Paint centerPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(radius + 10, radius + 10), radius - 15, centerPaint);
-  }
-
-  final ui.Image image = await pictureRecorder.endRecording().toImage(
-    (radius * 2 + 20).toInt(),
-    (radius * 2 + 20).toInt(),
+  return ChargerMarkerFactory.createEVChargerPin(
+    color: color,
+    isSelected: isSelected,
+    isVerified: isVerified,
   );
-  final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-  return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
 }
 
 class MapsScreen extends StatefulWidget {
@@ -79,15 +47,6 @@ class _MapsScreenState extends State<MapsScreen> {
   StreamSubscription<Position>? _positionSubscription;
   final MapsService _mapsService = MapsService();
   bool _isSuggestionsVisible = false;
-
-  // Caching marker icons
-  BitmapDescriptor? _markerAvailable;
-  BitmapDescriptor? _markerBusy;
-  BitmapDescriptor? _markerOffline;
-  BitmapDescriptor? _markerUnknown;
-  BitmapDescriptor? _markerVerifiedAvailable;
-  BitmapDescriptor? _markerSelected;
-  bool _markersLoaded = false;
 
   @override
   void initState() {
@@ -130,17 +89,7 @@ class _MapsScreenState extends State<MapsScreen> {
   Future<void> _initMarkerIcons() async {
     debugPrint("[MAPS SCREEN] Initializing custom marker icons...");
     try {
-      _markerAvailable = await createCustomMarker(const Color(0xFF10B981), false); // Green
-      _markerBusy = await createCustomMarker(const Color(0xFFF59E0B), false);      // Orange
-      _markerOffline = await createCustomMarker(const Color(0xFFEF4444), false);   // Red
-      _markerUnknown = await createCustomMarker(const Color(0xFF6B7280), false);   // Grey
-      _markerVerifiedAvailable = await createCustomMarker(const Color(0xFF10B981), false, isVerified: true);
-      _markerSelected = await createCustomMarker(const Color(0xFF3B82F6), true);    // Blue
-      if (mounted) {
-        setState(() {
-          _markersLoaded = true;
-        });
-      }
+      await ChargerMarkerFactory.init();
       debugPrint("[MAPS SCREEN] Custom marker icons loaded successfully.");
     } catch (e) {
       debugPrint("[MAPS SCREEN] Exception caught loading custom markers (falling back to defaults): $e");
@@ -240,16 +189,30 @@ class _MapsScreenState extends State<MapsScreen> {
         ),
       );
     } else {
-      double minLat = validChargers.first.latitude;
-      double maxLat = validChargers.first.latitude;
-      double minLng = validChargers.first.longitude;
-      double maxLng = validChargers.first.longitude;
-
+      final List<LatLng> allTargetPoints = [];
       for (final c in validChargers) {
-        if (c.latitude < minLat) minLat = c.latitude;
-        if (c.latitude > maxLat) maxLat = c.latitude;
-        if (c.longitude < minLng) minLng = c.longitude;
-        if (c.longitude > maxLng) maxLng = c.longitude;
+        allTargetPoints.add(LatLng(c.latitude, c.longitude));
+      }
+      if (provider.tripOrigin != null) {
+        allTargetPoints.add(provider.tripOrigin!.coordinates);
+      }
+      if (provider.tripDestination != null) {
+        allTargetPoints.add(provider.tripDestination!.coordinates);
+      }
+      if (provider.routePoints.isNotEmpty) {
+        allTargetPoints.addAll(provider.routePoints);
+      }
+
+      double minLat = allTargetPoints.first.latitude;
+      double maxLat = allTargetPoints.first.latitude;
+      double minLng = allTargetPoints.first.longitude;
+      double maxLng = allTargetPoints.first.longitude;
+
+      for (final pt in allTargetPoints) {
+        if (pt.latitude < minLat) minLat = pt.latitude;
+        if (pt.latitude > maxLat) maxLat = pt.latitude;
+        if (pt.longitude < minLng) minLng = pt.longitude;
+        if (pt.longitude > maxLng) maxLng = pt.longitude;
       }
 
       final bounds = LatLngBounds(
@@ -259,7 +222,7 @@ class _MapsScreenState extends State<MapsScreen> {
 
       debugPrint(
         '[CAMERA-MARKER-DIAGNOSTIC]\n'
-        'Multiple chargers count: ${validChargers.length}\n'
+        'Multiple targets count: ${allTargetPoints.length}\n'
         'Fitting camera to bounds: SW($minLat, $minLng), NE($maxLat, $maxLng)'
       );
 
@@ -309,31 +272,7 @@ class _MapsScreenState extends State<MapsScreen> {
     final filtered = mapsProvider.getFilteredMarkers();
     final Set<Marker> mapMarkers = filtered.map((m) {
       final isSelected = mapsProvider.selectedMarker?.id == m.id;
-      BitmapDescriptor icon = BitmapDescriptor.defaultMarkerWithHue(
-        m.isVerified ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueAzure
-      );
-      if (_markersLoaded) {
-        if (isSelected) {
-          icon = _markerSelected ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
-        } else if (m.isVerified || m.source == 'evhub_verified') {
-          icon = _markerVerifiedAvailable ?? _markerAvailable ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
-        } else {
-          switch (m.status) {
-            case MarkerStatus.available:
-              icon = _markerAvailable ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
-              break;
-            case MarkerStatus.busy:
-              icon = _markerBusy ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
-              break;
-            case MarkerStatus.offline:
-              icon = _markerOffline ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
-              break;
-            case MarkerStatus.unknown:
-              icon = _markerUnknown ?? _markerAvailable ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet);
-              break;
-          }
-        }
-      }
+      final BitmapDescriptor icon = ChargerMarkerFactory.getIconForCharger(m, isSelected: isSelected);
 
       debugPrint(
         '[MARKER-GENERATION-DIAGNOSTIC]\n'
@@ -347,6 +286,7 @@ class _MapsScreenState extends State<MapsScreen> {
         markerId: MarkerId(m.id),
         position: LatLng(m.latitude, m.longitude),
         icon: icon,
+        anchor: const Offset(0.5, 1.0),
         onTap: () {
           debugPrint('[MAP-MARKER-TAP] Marker ID: ${m.id}');
           debugPrint('[MAP-MARKER-TAP] Charger: ${m.title}');
@@ -372,6 +312,35 @@ class _MapsScreenState extends State<MapsScreen> {
         },
       );
     }).toSet();
+
+    // Add Trip Origin & Destination Markers if route mode is active
+    if (mapsProvider.tripOrigin != null) {
+      mapMarkers.add(
+        Marker(
+          markerId: const MarkerId('trip_origin'),
+          position: mapsProvider.tripOrigin!.coordinates,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          infoWindow: InfoWindow(
+            title: 'Start Location',
+            snippet: mapsProvider.tripOrigin!.displayName,
+          ),
+        ),
+      );
+    }
+
+    if (mapsProvider.tripDestination != null) {
+      mapMarkers.add(
+        Marker(
+          markerId: const MarkerId('trip_destination'),
+          position: mapsProvider.tripDestination!.coordinates,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(
+            title: 'Destination',
+            snippet: mapsProvider.tripDestination!.displayName,
+          ),
+        ),
+      );
+    }
 
     debugPrint(
       '[MARKER-STATE-DIAGNOSTIC]\n'
@@ -805,6 +774,33 @@ class _MapsScreenState extends State<MapsScreen> {
                       ),
                     ),
 
+                    const SizedBox(height: 8),
+
+                    // Floating Sort Options Carousel Bar
+                    SizedBox(
+                      height: 34,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          _buildSortBadge('🏆 Best Match', mapsProvider.currentSortOption == SortOption.bestMatch, () {
+                            mapsProvider.setSortOption(SortOption.bestMatch);
+                          }),
+                          _buildSortBadge('📍 Nearest', mapsProvider.currentSortOption == SortOption.nearest, () {
+                            mapsProvider.setSortOption(SortOption.nearest);
+                          }),
+                          _buildSortBadge('⚡ Fastest', mapsProvider.currentSortOption == SortOption.fastest, () {
+                            mapsProvider.setSortOption(SortOption.fastest);
+                          }),
+                          _buildSortBadge('💰 Cheapest', mapsProvider.currentSortOption == SortOption.cheapest, () {
+                            mapsProvider.setSortOption(SortOption.cheapest);
+                          }),
+                          _buildSortBadge('🛣️ Best for Route', mapsProvider.currentSortOption == SortOption.bestForRoute, () {
+                            mapsProvider.setSortOption(SortOption.bestForRoute);
+                          }),
+                        ],
+                      ),
+                    ),
+
                     // Search Feedback Status Toast
                     if (mapsProvider.searchStatusMessage != null)
                       Container(
@@ -1025,6 +1021,38 @@ class _MapsScreenState extends State<MapsScreen> {
                 color: isSelected ? Colors.black : Colors.white,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 fontSize: 11,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Sort Chip Badge
+  Widget _buildSortBadge(String label, bool isSelected, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8.0),
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF3B82F6) : AppColors.card.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF3B82F6) : Colors.white.withOpacity(0.08),
+              width: 1.2,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.outfit(
+                color: isSelected ? Colors.white : Colors.white70,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               ),
             ),
           ),
@@ -1331,9 +1359,10 @@ class _MapsScreenState extends State<MapsScreen> {
                     } else {
                       final auth = context.read<AuthProvider>();
                       sessionProvider.startSession(
-                        auth.user?.id ?? 'default_user',
-                        m.id,
-                        'ccs2_1',
+                        userId: auth.user?.id ?? 'default_user',
+                        chargerId: m.id,
+                        chargerName: m.title,
+                        connectorType: 'ccs2_1',
                       );
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveChargingScreen()));
                     }
