@@ -8,28 +8,15 @@ import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
+
 import '../../providers/maps_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/charging_session_provider.dart';
 import '../../core/constants/map_constants.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/widgets/glass_container.dart';
 import '../../core/widgets/charger_source_badge.dart';
 import '../../core/widgets/charger_marker_factory.dart';
 import '../../models/map_marker_model.dart';
 import '../../services/maps_service.dart';
-import '../../services/smart_charger_ranking_service.dart';
-import '../charging/live_charging_screen.dart';
 import 'charger_details_screen.dart';
-
-// Helper function to dynamically generate high-DPI EV charging station pin markers
-Future<BitmapDescriptor> createCustomMarker(Color color, bool isSelected, {bool isVerified = false}) async {
-  return ChargerMarkerFactory.createEVChargerPin(
-    color: color,
-    isSelected: isSelected,
-    isVerified: isVerified,
-  );
-}
 
 class MapsScreen extends StatefulWidget {
   const MapsScreen({super.key});
@@ -41,7 +28,8 @@ class MapsScreen extends StatefulWidget {
 class _MapsScreenState extends State<MapsScreen> {
   GoogleMapController? _mapController;
   MapType _mapType = MapType.normal;
-  bool _trafficEnabled = true;
+  final bool _trafficEnabled = true;
+  bool _showCountCard = true;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   StreamSubscription<Position>? _positionSubscription;
@@ -58,7 +46,6 @@ class _MapsScreenState extends State<MapsScreen> {
       final provider = context.read<MapsProvider>();
       provider.fetchCurrentLocationAndStations().then((_) {
         _recenterCamera();
-        // Show GPS error dialog AFTER map has loaded (non-blocking)
         final err = provider.locationError;
         if (err != null && mounted) {
           _showLocationErrorDialog(err);
@@ -67,10 +54,8 @@ class _MapsScreenState extends State<MapsScreen> {
       });
     });
 
-    // Track real device location updates live
     _positionSubscription = _mapsService.getPositionStream().listen((pos) {
       if (mounted) {
-        debugPrint("[MAPS SCREEN] Live GPS update received: ${pos.latitude}, ${pos.longitude}");
         context.read<MapsProvider>().updateLiveLocation(pos.latitude, pos.longitude);
       }
     });
@@ -87,12 +72,10 @@ class _MapsScreenState extends State<MapsScreen> {
   }
 
   Future<void> _initMarkerIcons() async {
-    debugPrint("[MAPS SCREEN] Initializing custom marker icons...");
     try {
       await ChargerMarkerFactory.init();
-      debugPrint("[MAPS SCREEN] Custom marker icons loaded successfully.");
     } catch (e) {
-      debugPrint("[MAPS SCREEN] Exception caught loading custom markers (falling back to defaults): $e");
+      debugPrint("[MAPS SCREEN] Exception loading custom markers: $e");
     }
   }
 
@@ -101,34 +84,34 @@ class _MapsScreenState extends State<MapsScreen> {
       context: context,
       barrierDismissible: true,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1D2E),
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             const Icon(Icons.location_off, color: Color(0xFFF59E0B), size: 22),
             const SizedBox(width: 10),
-            const Text(
+            Text(
               'Location Issue',
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(color: const Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         content: Text(
           message,
-          style: const TextStyle(color: Colors.white70, fontSize: 13),
+          style: GoogleFonts.outfit(color: const Color(0xFF475569), fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK', style: TextStyle(color: Color(0xFF10B981))),
+            child: Text('OK', style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
+
   @override
   void dispose() {
-    debugPrint("[MAPS SCREEN] dispose called");
     context.read<MapsProvider>().stopAutoRefresh();
     _positionSubscription?.cancel();
     _searchController.dispose();
@@ -143,17 +126,11 @@ class _MapsScreenState extends State<MapsScreen> {
         mapsProvider.currentLocation!['latitude']!,
         mapsProvider.currentLocation!['longitude']!,
       );
-      debugPrint("[MAPS SCREEN] Recentering camera to user GPS: $targetLatLng");
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: targetLatLng,
-            zoom: 14.5,
-          ),
+          CameraPosition(target: targetLatLng, zoom: 14.5),
         ),
       );
-    } else {
-      debugPrint("[MAPS SCREEN] Unable to recenter camera: controller is $_mapController, currentLocation is ${mapsProvider.currentLocation}");
     }
   }
 
@@ -164,22 +141,9 @@ class _MapsScreenState extends State<MapsScreen> {
     if (validChargers.isEmpty) return;
 
     final provider = context.read<MapsProvider>();
-    final currentLat = provider.currentLocation?['latitude'] ?? 28.6304;
-    final currentLng = provider.currentLocation?['longitude'] ?? 77.2177;
 
     if (validChargers.length == 1) {
       final single = validChargers.first;
-      final distM = Geolocator.distanceBetween(currentLat, currentLng, single.latitude, single.longitude);
-      final distKm = distM / 1000.0;
-
-      debugPrint(
-        '[CAMERA-MARKER-DIAGNOSTIC]\n'
-        'Camera target: ($currentLat, $currentLng)\n'
-        'Single charger position: (${single.latitude}, ${single.longitude})\n'
-        'Distance between camera center and charger: ${distKm.toStringAsFixed(2)} km\n'
-        'Moving camera directly to single charger...'
-      );
-
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
@@ -220,12 +184,6 @@ class _MapsScreenState extends State<MapsScreen> {
         northeast: LatLng(maxLat, maxLng),
       );
 
-      debugPrint(
-        '[CAMERA-MARKER-DIAGNOSTIC]\n'
-        'Multiple targets count: ${allTargetPoints.length}\n'
-        'Fitting camera to bounds: SW($minLat, $minLng), NE($maxLat, $maxLng)'
-      );
-
       _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(bounds, 60.0),
       );
@@ -233,12 +191,10 @@ class _MapsScreenState extends State<MapsScreen> {
   }
 
   void _zoomIn() {
-    debugPrint("[MAPS SCREEN] Zoom In triggered");
     _mapController?.animateCamera(CameraUpdate.zoomIn());
   }
 
   void _zoomOut() {
-    debugPrint("[MAPS SCREEN] Zoom Out triggered");
     _mapController?.animateCamera(CameraUpdate.zoomOut());
   }
 
@@ -247,40 +203,18 @@ class _MapsScreenState extends State<MapsScreen> {
     if (network.toLowerCase().contains('statiq')) return AppColors.primary;
     if (network.toLowerCase().contains('jio')) return AppColors.accentPurple;
     if (network.toLowerCase().contains('zeon')) return AppColors.secondary;
-    return AppColors.accent;
-  }
-
-  String _getHeroImage(String network) {
-    if (network.toLowerCase().contains('tata')) {
-      return 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=800&q=80';
-    }
-    if (network.toLowerCase().contains('statiq')) {
-      return 'https://images.unsplash.com/photo-1620891549027-942fdc95d3f5?auto=format&fit=crop&w=800&q=80';
-    }
-    if (network.toLowerCase().contains('jio')) {
-      return 'https://images.unsplash.com/photo-1617783921319-7977eb780131?auto=format&fit=crop&w=800&q=80';
-    }
-    return 'https://images.unsplash.com/photo-1593941707882-a5bba14938cb?auto=format&fit=crop&w=800&q=80';
+    return const Color(0xFF10B981);
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint("[MAPS SCREEN] Widget build lifecycle started");
     final mapsProvider = context.watch<MapsProvider>();
-
-    // Build custom markers dynamically
     final filtered = mapsProvider.getFilteredMarkers();
+
+    // Render Compact EV Teardrop Pins anchored at Offset(0.5, 1.0)
     final Set<Marker> mapMarkers = filtered.map((m) {
       final isSelected = mapsProvider.selectedMarker?.id == m.id;
       final BitmapDescriptor icon = ChargerMarkerFactory.getIconForCharger(m, isSelected: isSelected);
-
-      debugPrint(
-        '[MARKER-GENERATION-DIAGNOSTIC]\n'
-        'Marker ID: ${m.id}\n'
-        'Marker position: (${m.latitude}, ${m.longitude})\n'
-        'Charger position: (${m.latitude}, ${m.longitude})\n'
-        'Marker created: true'
-      );
 
       return Marker(
         markerId: MarkerId(m.id),
@@ -288,10 +222,7 @@ class _MapsScreenState extends State<MapsScreen> {
         icon: icon,
         anchor: const Offset(0.5, 1.0),
         onTap: () {
-          debugPrint('[MAP-MARKER-TAP] Marker ID: ${m.id}');
-          debugPrint('[MAP-MARKER-TAP] Charger: ${m.title}');
           mapsProvider.setSelectedMarker(m);
-          debugPrint('[MAP-CHARGER-SELECTED] Charger selected successfully');
           _searchFocusNode.unfocus();
           if (mounted) {
             setState(() {
@@ -307,13 +238,12 @@ class _MapsScreenState extends State<MapsScreen> {
                 ),
               ),
             );
-            debugPrint('[MAP-INTERACTION] Camera moved: true');
           }
         },
       );
     }).toSet();
 
-    // Add Trip Origin & Destination Markers if route mode is active
+    // Add Trip Origin & Destination Markers in route mode
     if (mapsProvider.tripOrigin != null) {
       mapMarkers.add(
         Marker(
@@ -321,7 +251,7 @@ class _MapsScreenState extends State<MapsScreen> {
           position: mapsProvider.tripOrigin!.coordinates,
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           infoWindow: InfoWindow(
-            title: 'Start Location',
+            title: 'Origin',
             snippet: mapsProvider.tripOrigin!.displayName,
           ),
         ),
@@ -342,21 +272,14 @@ class _MapsScreenState extends State<MapsScreen> {
       );
     }
 
-    debugPrint(
-      '[MARKER-STATE-DIAGNOSTIC]\n'
-      'Provider marker count: ${mapsProvider.markers.length}\n'
-      'UI marker count: ${filtered.length}\n'
-      'GoogleMap marker count: ${mapMarkers.length}'
-    );
-
-    // Directions routing polyline overlay
+    // Directions routing polyline
     final Set<Polyline> polylines = {};
     if (mapsProvider.routePoints.isNotEmpty) {
       polylines.add(
         Polyline(
           polylineId: const PolylineId('directions_route'),
           points: mapsProvider.routePoints,
-          color: AppColors.primary,
+          color: const Color(0xFF10B981),
           width: 5,
           jointType: JointType.round,
           startCap: Cap.roundCap,
@@ -373,123 +296,68 @@ class _MapsScreenState extends State<MapsScreen> {
       zoom: 14.0,
     );
 
-    debugPrint("[MAPS SCREEN] initialCameraPosition initialized: ${initialCameraPosition.target}");
+    String countText = '${filtered.length} chargers found in this area';
+    if (mapsProvider.discoveryMode == 'route') {
+      countText = '${filtered.length} chargers found along your route';
+    } else if (mapsProvider.discoveryMode == 'gps') {
+      countText = '${filtered.length} chargers found near you';
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // Full Screen Google Map rendered FIRST inside Stack
+          // 1. FULL SCREEN GOOGLE MAP
           Positioned.fill(
-            child: Builder(
-              builder: (context) {
-                debugPrint("[MAPS SCREEN] GoogleMap widget rendering in build tree");
-                return GoogleMap(
-                  gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                    Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
-                  },
-                  initialCameraPosition: initialCameraPosition,
-                  onMapCreated: (controller) {
-                    debugPrint("[MAPS SCREEN] GoogleMap successfully created and controller initialized");
-                    _mapController = controller;
-                    if (_mapType == MapType.normal) {
-                      if (kIsWeb) {
-                        debugPrint("[MAPS SCREEN] Skipping setMapStyle on Web to prevent PlatformException");
-                      } else {
-                        try {
-                          debugPrint("[MAPS SCREEN] Applying dark map style configuration on mobile");
-                          controller.setMapStyle(MapConstants.darkMapStyle);
-                        } catch (e) {
-                          debugPrint("[MAPS SCREEN] Exception caught applying map style: $e");
-                        }
-                      }
-                    }
-                  },
-                  markers: mapMarkers,
-                  polylines: polylines,
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  compassEnabled: true,
-                  trafficEnabled: _trafficEnabled,
-                  mapType: _mapType,
-                  buildingsEnabled: true,
-                  onTap: (LatLng coords) {
-                    debugPrint('[MAP-INTERACTION] Map tapped: true');
-                    debugPrint('[MAP-INTERACTION] Map tapped at (${coords.latitude}, ${coords.longitude})');
-                    mapsProvider.setSelectedMarker(null);
-                    mapsProvider.clearRoute();
-                    _searchFocusNode.unfocus();
-                    if (mounted) {
-                      setState(() {
-                        _isSuggestionsVisible = false;
-                      });
-                    }
-                  },
-                );
-              }
+            child: GoogleMap(
+              gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+              },
+              initialCameraPosition: initialCameraPosition,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                if (_mapType == MapType.normal && !kIsWeb) {
+                  try {
+                    controller.setMapStyle(MapConstants.darkMapStyle);
+                  } catch (_) {}
+                }
+              },
+              markers: mapMarkers,
+              polylines: polylines,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              compassEnabled: true,
+              trafficEnabled: _trafficEnabled,
+              mapType: _mapType,
+              buildingsEnabled: true,
+              onTap: (LatLng coords) {
+                mapsProvider.setSelectedMarker(null);
+                mapsProvider.clearRoute();
+                _searchFocusNode.unfocus();
+                if (mounted) {
+                  setState(() {
+                    _isSuggestionsVisible = false;
+                  });
+                }
+              },
             ),
           ),
 
-          // Loading indicator overlay (non-blocking — map still renders)
+          // Loading Progress Bar
           if (mapsProvider.isLoading)
-            Positioned(
+            const Positioned(
               top: 0, left: 0, right: 0,
               child: LinearProgressIndicator(
                 backgroundColor: Colors.transparent,
-                color: AppColors.primary,
+                color: Color(0xFF10B981),
                 minHeight: 3,
               ),
             ),
 
-          // "No chargers nearby" empty state — shown only when fully loaded, empty, and not searching
-          if (!mapsProvider.isLoading && !mapsProvider.isSearching && mapsProvider.getFilteredMarkers().isEmpty)
-            Positioned(
-              bottom: 100,
-              left: 24,
-              right: 24,
-              child: PointerInterceptor(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1D2E).withOpacity(0.92),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.08)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.ev_station, color: Color(0xFF10B981), size: 28),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'No EV Chargers Found Nearby',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Try searching for a city (e.g. Delhi, Bengaluru, Chennai) or clearing active filters.',
-                              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // Header Glass Overlay: Autocomplete Search Console & Chips
+          // 2. TOP FLOATING SEARCH BAR & FILTERS HUD CONSOLE
           Positioned(
-            top: 24,
+            top: 20,
             left: 16,
             right: 16,
             child: SafeArea(
@@ -497,34 +365,44 @@ class _MapsScreenState extends State<MapsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Top Search Console
-                    GlassContainer(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      borderRadius: 24,
-                      animateBorder: true,
+                    // PREMIUM WHITE SEARCH BAR
+                    Container(
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.12),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
                         children: [
                           if (mapsProvider.isSearching)
                             const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2.2, color: Color(0xFF10B981)),
                             )
                           else
                             const HugeIcon(
                               icon: HugeIcons.strokeRoundedSearch01,
-                              color: AppColors.primary,
-                              size: 20,
+                              color: Color(0xFF10B981),
+                              size: 22,
                             ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: TextField(
                               controller: _searchController,
                               focusNode: _searchFocusNode,
-                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 15),
+                              style: GoogleFonts.outfit(color: const Color(0xFF0F172A), fontSize: 15, fontWeight: FontWeight.w500),
                               decoration: InputDecoration(
-                                hintText: 'Search city, area, charger, network...',
-                                hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 14),
+                                hintText: 'Search city, area, charger or network',
+                                hintStyle: GoogleFonts.outfit(color: const Color(0xFF64748B), fontSize: 14),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: InputBorder.none,
@@ -552,7 +430,6 @@ class _MapsScreenState extends State<MapsScreen> {
                                         CameraPosition(target: latLng, zoom: 14.0),
                                       ),
                                     );
-                                    debugPrint('[MAP-INTERACTION] Camera moved: true');
                                   });
                                 }
                               },
@@ -560,7 +437,7 @@ class _MapsScreenState extends State<MapsScreen> {
                           ),
                           if (_searchController.text.isNotEmpty)
                             IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.grey, size: 18),
+                              icon: const Icon(Icons.clear, color: Color(0xFF64748B), size: 18),
                               onPressed: () {
                                 _searchController.clear();
                                 _searchFocusNode.unfocus();
@@ -575,13 +452,13 @@ class _MapsScreenState extends State<MapsScreen> {
                           Container(
                             width: 1,
                             height: 24,
-                            color: Colors.white10,
-                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                            color: const Color(0xFFE2E8F0),
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
                           ),
                           IconButton(
                             icon: const HugeIcon(
                               icon: HugeIcons.strokeRoundedFilter,
-                              color: AppColors.textSecondary,
+                              color: Color(0xFF334155),
                               size: 20,
                             ),
                             onPressed: () => _showAdvancedFiltersModal(context, mapsProvider),
@@ -590,330 +467,243 @@ class _MapsScreenState extends State<MapsScreen> {
                       ),
                     ),
 
-                    // Autocomplete Suggestion List overlay
-                    Builder(
-                      builder: (context) {
-                        debugPrint(
-                          '[SEARCH-UI-DIAGNOSTIC] Suggestions received by UI: ${mapsProvider.suggestions.length} | Rendered by UI: ${_isSuggestionsVisible ? mapsProvider.suggestions.length : 0}'
-                        );
-                        if (_isSuggestionsVisible && mapsProvider.isSearching) {
-                          return Container(
-                            margin: const EdgeInsets.only(top: 8),
-                            child: GlassContainer(
-                              borderRadius: 20,
-                              padding: const EdgeInsets.all(12),
-                              animateBorder: false,
-                              child: Row(
-                                children: [
-                                  const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    'Searching chargers & locations...',
-                                    style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
-                                  ),
-                                ],
-                              ),
+                    // AUTOCOMPLETE SUGGESTIONS DROPDOWN CARD
+                    if (_isSuggestionsVisible && mapsProvider.suggestions.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        constraints: const BoxConstraints(maxHeight: 280),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.12),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
                             ),
-                          );
-                        } else if (_isSuggestionsVisible && mapsProvider.suggestions.isNotEmpty) {
-                          return Container(
-                            margin: const EdgeInsets.only(top: 8),
-                            constraints: const BoxConstraints(maxHeight: 280),
-                            child: GlassContainer(
-                              borderRadius: 24,
-                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                              animateBorder: false,
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                padding: EdgeInsets.zero,
-                                itemCount: mapsProvider.suggestions.length,
-                                itemBuilder: (context, idx) {
-                                  final sug = mapsProvider.suggestions[idx];
-                                  final type = sug['type'] as String? ?? 'location';
-                                  
-                                  IconData leadingIcon;
-                                  Color iconColor;
-                                  if (type == 'network') {
-                                    leadingIcon = Icons.ev_station;
-                                    iconColor = AppColors.primary;
-                                  } else if (type == 'station') {
-                                    leadingIcon = Icons.electric_car;
-                                    iconColor = const Color(0xFF10B981);
-                                  } else if (type == 'connector') {
-                                    leadingIcon = Icons.power;
-                                    iconColor = const Color(0xFFF59E0B);
-                                  } else {
-                                    leadingIcon = Icons.location_on_outlined;
-                                    iconColor = AppColors.primary;
-                                  }
+                          ],
+                        ),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          itemCount: mapsProvider.suggestions.length,
+                          itemBuilder: (context, idx) {
+                            final sug = mapsProvider.suggestions[idx];
+                            final type = sug['type'] as String? ?? 'location';
+                            IconData leadingIcon = Icons.location_on_outlined;
+                            Color iconColor = const Color(0xFF10B981);
+                            if (type == 'network') {
+                              leadingIcon = Icons.ev_station;
+                              iconColor = const Color(0xFF3B82F6);
+                            } else if (type == 'station') {
+                              leadingIcon = Icons.electric_car;
+                              iconColor = const Color(0xFF10B981);
+                            }
 
-                                  return GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () {
-                                      final desc = sug['description'] as String? ?? 'Unknown';
-                                      final src = sug['source'] as String? ?? 'unknown';
-                                      final lat = sug['latitude'] ?? 0.0;
-                                      final lng = sug['longitude'] ?? 0.0;
-
-                                      debugPrint('[SEARCH-CLICK-DIAGNOSTIC]');
-                                      debugPrint('Result clicked: $desc');
-                                      debugPrint('Index: $idx');
-                                      debugPrint('Source: $src');
-                                      debugPrint('Coordinates: $lat, $lng');
-
-                                      _searchFocusNode.unfocus();
-                                      if (mounted) {
-                                        setState(() {
-                                          _isSuggestionsVisible = false;
-                                        });
-                                      }
-                                      _searchController.text = desc;
-
-                                      mapsProvider.selectSuggestion(sug, (latLng, {zoom}) {
-                                        debugPrint('[SEARCH-CAMERA-DIAGNOSTIC] Moving camera to: ${latLng.latitude}, ${latLng.longitude}');
-                                        _mapController?.animateCamera(
-                                          CameraUpdate.newCameraPosition(
-                                            CameraPosition(target: latLng, zoom: zoom ?? 14.5),
-                                          ),
-                                        );
-                                        debugPrint('[MAP-INTERACTION] Camera moved: true');
-                                        Future.delayed(const Duration(milliseconds: 300), () {
-                                          final visible = mapsProvider.getFilteredMarkers();
-                                          if (visible.isNotEmpty) {
-                                            _fitCameraToChargers(visible);
-                                          }
-                                        });
-                                      });
-                                    },
-                                    child: ListTile(
-                                      leading: Icon(leadingIcon, color: iconColor, size: 20),
-                                      title: Text(
-                                        sug['description'] as String,
-                                        style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      subtitle: sug['subtitle'] != null
-                                          ? Text(
-                                              sug['subtitle'] as String,
-                                              style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            )
-                                          : null,
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(leadingIcon, color: iconColor, size: 20),
+                              title: Text(
+                                sug['description'] as String,
+                                style: GoogleFonts.outfit(color: const Color(0xFF0F172A), fontSize: 13, fontWeight: FontWeight.w600),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: sug['subtitle'] != null
+                                  ? Text(
+                                      sug['subtitle'] as String,
+                                      style: GoogleFonts.outfit(color: const Color(0xFF64748B), fontSize: 11),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    )
+                                  : null,
+                              onTap: () {
+                                final desc = sug['description'] as String? ?? '';
+                                _searchFocusNode.unfocus();
+                                setState(() {
+                                  _isSuggestionsVisible = false;
+                                });
+                                _searchController.text = desc;
+                                mapsProvider.selectSuggestion(sug, (latLng, {zoom}) {
+                                  _mapController?.animateCamera(
+                                    CameraUpdate.newCameraPosition(
+                                      CameraPosition(target: latLng, zoom: zoom ?? 14.5),
                                     ),
                                   );
-                                },
-                              ),
-                            ),
-                          );
-                        } else if (_isSuggestionsVisible &&
-                            _searchController.text.trim().length >= 2 &&
-                            !mapsProvider.isSearching &&
-                            mapsProvider.suggestions.isEmpty) {
-                          return Container(
-                            margin: const EdgeInsets.only(top: 8),
-                            child: GlassContainer(
-                              borderRadius: 20,
-                              padding: const EdgeInsets.all(12),
-                              animateBorder: false,
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.info_outline, color: Colors.grey, size: 18),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'No results found for "${_searchController.text.trim()}"',
-                                    style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      }
-                    ),
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
 
-                    // Floating Filter Chips Carousel
+                    // FLOATING FILTER CHIPS ROW
                     SizedBox(
                       height: 38,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         children: [
-                          _buildFilterBadge('⭐ EVHub Verified', mapsProvider.selectedSourceFilter == 'EVHub Verified', () {
-                            mapsProvider.setSourceFilter('EVHub Verified');
+                          _buildFilterChip('⭐ EVHub Verified', mapsProvider.selectedSourceFilter == 'EVHub Verified', () {
+                            mapsProvider.setSourceFilter(
+                              mapsProvider.selectedSourceFilter == 'EVHub Verified' ? 'All Sources' : 'EVHub Verified',
+                            );
                           }),
-                          _buildFilterBadge('🌐 Google Places', mapsProvider.selectedSourceFilter == 'Google Places', () {
-                            mapsProvider.setSourceFilter('Google Places');
+                          _buildFilterChip('🌐 Google Places', mapsProvider.selectedSourceFilter == 'Google Places', () {
+                            mapsProvider.setSourceFilter(
+                              mapsProvider.selectedSourceFilter == 'Google Places' ? 'All Sources' : 'Google Places',
+                            );
                           }),
-                          _buildFilterBadge('CCS2', mapsProvider.selectedConnectors.contains('CCS2'), () {
+                          _buildFilterChip('⚡ CCS2', mapsProvider.selectedConnectors.contains('CCS2'), () {
                             mapsProvider.toggleConnectorFilter('CCS2');
                           }),
-                          _buildFilterBadge('Fast', mapsProvider.selectedSpeeds.contains('Fast'), () {
+                          _buildFilterChip('🔌 Fast', mapsProvider.selectedSpeeds.contains('Fast'), () {
                             mapsProvider.toggleSpeedFilter('Fast');
                           }),
-                          _buildFilterBadge('Ultra Fast', mapsProvider.selectedSpeeds.contains('Ultra Fast'), () {
+                          _buildFilterChip('🚀 Ultra Fast', mapsProvider.selectedSpeeds.contains('Ultra Fast'), () {
                             mapsProvider.toggleSpeedFilter('Ultra Fast');
                           }),
-                          _buildFilterBadge('Available', mapsProvider.selectedStatusFilter == 'Available', () {
-                            mapsProvider.setStatusFilter('Available');
+                          _buildFilterChip('🟢 Available', mapsProvider.selectedStatusFilter == 'Available', () {
+                            mapsProvider.setStatusFilter(
+                              mapsProvider.selectedStatusFilter == 'Available' ? null : 'Available',
+                            );
                           }),
-                          _buildFilterBadge('Tata Power', mapsProvider.selectedNetwork == 'Tata Power', () {
-                            mapsProvider.setNetworkFilter('Tata Power');
-                          }),
-                          _buildFilterBadge('Statiq', mapsProvider.selectedNetwork == 'Statiq', () {
-                            mapsProvider.setNetworkFilter('Statiq');
-                          }),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // Floating Sort Options Carousel Bar
-                    SizedBox(
-                      height: 34,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _buildSortBadge('🏆 Best Match', mapsProvider.currentSortOption == SortOption.bestMatch, () {
-                            mapsProvider.setSortOption(SortOption.bestMatch);
-                          }),
-                          _buildSortBadge('📍 Nearest', mapsProvider.currentSortOption == SortOption.nearest, () {
-                            mapsProvider.setSortOption(SortOption.nearest);
-                          }),
-                          _buildSortBadge('⚡ Fastest', mapsProvider.currentSortOption == SortOption.fastest, () {
-                            mapsProvider.setSortOption(SortOption.fastest);
-                          }),
-                          _buildSortBadge('💰 Cheapest', mapsProvider.currentSortOption == SortOption.cheapest, () {
-                            mapsProvider.setSortOption(SortOption.cheapest);
-                          }),
-                          _buildSortBadge('🛣️ Best for Route', mapsProvider.currentSortOption == SortOption.bestForRoute, () {
-                            mapsProvider.setSortOption(SortOption.bestForRoute);
+                          _buildFilterChip('🏢 All Networks', mapsProvider.selectedNetwork != null, () {
+                            _showAdvancedFiltersModal(context, mapsProvider);
                           }),
                         ],
                       ),
                     ),
 
-                    // Search Feedback Status Toast
-                    if (mapsProvider.searchStatusMessage != null)
+                    // DYNAMIC CHARGER COUNT CARD
+                    if (_showCountCard) ...[
+                      const SizedBox(height: 8),
                       Container(
-                        margin: const EdgeInsets.only(top: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A1D2E).withOpacity(0.92),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.primary.withOpacity(0.4)),
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
                           ],
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.check_circle_outline, color: AppColors.primary, size: 16),
+                            const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 16),
                             const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                mapsProvider.searchStatusMessage!,
-                                style: GoogleFonts.outfit(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            Text(
+                              countText,
+                              style: GoogleFonts.outfit(
+                                color: const Color(0xFF0F172A),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
                               ),
                             ),
+                            const SizedBox(width: 8),
                             GestureDetector(
-                              onTap: () => mapsProvider.clearSearchStatus(),
-                              child: const Icon(Icons.close, color: Colors.grey, size: 14),
+                              onTap: () {
+                                setState(() {
+                                  _showCountCard = false;
+                                });
+                              },
+                              child: const Icon(Icons.close, color: Color(0xFF94A3B8), size: 14),
                             ),
                           ],
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
             ),
           ),
 
-          // Map Control Panels (Right Zoom/Recenter Float Console)
+          // 3. FLOATING MAP LEGEND (LOWER LEFT)
           Positioned(
-            bottom: mapsProvider.selectedMarker != null ? 360 : 40,
+            bottom: mapsProvider.selectedMarker != null ? 360 : 30,
+            left: 16,
+            child: PointerInterceptor(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.95),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildLegendItem(const Color(0xFF10B981), 'Available'),
+                    const SizedBox(width: 10),
+                    _buildLegendItem(const Color(0xFFF59E0B), 'Busy'),
+                    const SizedBox(width: 10),
+                    _buildLegendItem(const Color(0xFFEF4444), 'Offline'),
+                    const SizedBox(width: 10),
+                    _buildLegendItem(const Color(0xFF6B7280), 'Unknown'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // 4. FLOATING MAP CONTROLS (RIGHT SIDE VERTICAL BUTTONS)
+          Positioned(
+            bottom: mapsProvider.selectedMarker != null ? 360 : 30,
             right: 16,
             child: PointerInterceptor(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildMapControlBtn(
+                  _buildCircularControlBtn(
                     icon: HugeIcons.strokeRoundedSatellite,
                     isActive: _mapType == MapType.satellite,
                     onTap: () {
                       setState(() {
                         _mapType = _mapType == MapType.normal ? MapType.satellite : MapType.normal;
                       });
-                      if (_mapController != null) {
-                        if (_mapType == MapType.normal) {
-                          if (kIsWeb) {
-                            debugPrint("[MAPS SCREEN] Skipping setMapStyle on Web satellite switch");
-                          } else {
-                            try {
-                              _mapController!.setMapStyle(MapConstants.darkMapStyle);
-                            } catch (e) {
-                              debugPrint("[MAPS SCREEN] Error setting map style: $e");
-                            }
-                          }
-                        } else {
-                          if (kIsWeb) {
-                            debugPrint("[MAPS SCREEN] Skipping clearMapStyle on Web satellite switch");
-                          } else {
-                            try {
-                              _mapController!.setMapStyle(null);
-                            } catch (e) {
-                              debugPrint("[MAPS SCREEN] Error clearing map style: $e");
-                            }
-                          }
-                        }
+                      if (_mapController != null && !kIsWeb) {
+                        try {
+                          _mapController!.setMapStyle(_mapType == MapType.normal ? MapConstants.darkMapStyle : null);
+                        } catch (_) {}
                       }
                     },
                   ),
-                  const SizedBox(height: 12),
-                  _buildMapControlBtn(
-                    icon: HugeIcons.strokeRoundedRoadLocation01,
-                    isActive: _trafficEnabled,
-                    onTap: () {
-                      setState(() {
-                        _trafficEnabled = !_trafficEnabled;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _buildMapControlBtn(
+                  const SizedBox(height: 10),
+                  _buildCircularControlBtn(
                     icon: HugeIcons.strokeRoundedAddCircle,
                     isActive: false,
                     onTap: _zoomIn,
                   ),
-                  const SizedBox(height: 12),
-                  _buildMapControlBtn(
+                  const SizedBox(height: 10),
+                  _buildCircularControlBtn(
                     icon: HugeIcons.strokeRoundedMinusSignCircle,
                     isActive: false,
                     onTap: _zoomOut,
                   ),
-                  const SizedBox(height: 12),
-                  _buildMapControlBtn(
+                  const SizedBox(height: 10),
+                  _buildCircularControlBtn(
                     icon: HugeIcons.strokeRoundedLocation01,
                     isActive: true,
                     onTap: _recenterCamera,
                   ),
-                  if (mapsProvider.getFilteredMarkers().isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _buildMapControlBtn(
-                      icon: HugeIcons.strokeRoundedLocation01,
+                  if (filtered.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _buildCircularControlBtn(
+                      icon: HugeIcons.strokeRoundedMapsLocation01,
                       isActive: true,
-                      onTap: () => _fitCameraToChargers(mapsProvider.getFilteredMarkers()),
+                      onTap: () => _fitCameraToChargers(filtered),
                     ),
                   ],
                 ],
@@ -921,30 +711,35 @@ class _MapsScreenState extends State<MapsScreen> {
             ),
           ),
 
-          // Google Directions route details HUD card
+          // Route Info HUD
           if (mapsProvider.routeDistance != null)
             Positioned(
               bottom: mapsProvider.selectedMarker != null ? 340 : 20,
               left: 16,
               right: 80,
               child: PointerInterceptor(
-                child: GlassContainer(
+                child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  borderRadius: 16,
-                  animateBorder: true,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
                   child: Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
+                          color: const Color(0xFF10B981).withOpacity(0.12),
                           shape: BoxShape.circle,
                         ),
-                        child: const HugeIcon(
-                          icon: HugeIcons.strokeRoundedRoute01,
-                          color: AppColors.primary,
-                          size: 20,
-                        ),
+                        child: const Icon(Icons.alt_route, color: Color(0xFF10B981), size: 20),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -956,7 +751,7 @@ class _MapsScreenState extends State<MapsScreen> {
                               'ETA: ${mapsProvider.routeDuration}',
                               style: GoogleFonts.outfit(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                                color: const Color(0xFF0F172A),
                                 fontSize: 14,
                               ),
                             ),
@@ -964,7 +759,7 @@ class _MapsScreenState extends State<MapsScreen> {
                             Text(
                               'Distance: ${mapsProvider.routeDistance} • Est. Battery Needed: ${mapsProvider.estimatedBatteryUsage}%',
                               style: GoogleFonts.outfit(
-                                color: AppColors.textSecondary,
+                                color: const Color(0xFF64748B),
                                 fontSize: 11,
                               ),
                             ),
@@ -972,7 +767,7 @@ class _MapsScreenState extends State<MapsScreen> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.grey, size: 16),
+                        icon: const Icon(Icons.close, color: Color(0xFF94A3B8), size: 16),
                         onPressed: () => mapsProvider.clearRoute(),
                       )
                     ],
@@ -981,12 +776,10 @@ class _MapsScreenState extends State<MapsScreen> {
               ),
             ),
 
-          // Draggable Bottom Sheet for selected station
+          // Interactive Bottom Sheet for selected charger
           if (mapsProvider.selectedMarker != null)
             Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
+              bottom: 0, left: 0, right: 0,
               height: MediaQuery.of(context).size.height * 0.85,
               child: PointerInterceptor(
                 child: _buildInteractiveBottomSheet(mapsProvider, context),
@@ -997,8 +790,7 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
-  // Filter Chip Badge
-  Widget _buildFilterBadge(String label, bool isSelected, VoidCallback onTap) {
+  Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(right: 8.0),
       child: GestureDetector(
@@ -1007,52 +799,27 @@ class _MapsScreenState extends State<MapsScreen> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary : AppColors.card.withOpacity(0.4),
+            color: isSelected ? const Color(0xFF10B981) : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isSelected ? AppColors.primary : Colors.white.withOpacity(0.08),
+              color: isSelected ? const Color(0xFF10B981) : const Color(0xFFE2E8F0),
               width: 1.2,
             ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.outfit(
-                color: isSelected ? Colors.black : Colors.white,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 11,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Sort Chip Badge
-  Widget _buildSortBadge(String label, bool isSelected, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8.0),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF3B82F6) : AppColors.card.withOpacity(0.35),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isSelected ? const Color(0xFF3B82F6) : Colors.white.withOpacity(0.08),
-              width: 1.2,
-            ),
+            ],
           ),
           child: Center(
             child: Text(
               label,
               style: GoogleFonts.outfit(
-                color: isSelected ? Colors.white : Colors.white70,
+                color: isSelected ? Colors.black : const Color(0xFF334155),
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               ),
             ),
           ),
@@ -1061,8 +828,7 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
-  // Map control buttons
-  Widget _buildMapControlBtn({
+  Widget _buildCircularControlBtn({
     required List<List<dynamic>> icon,
     required bool isActive,
     required VoidCallback onTap,
@@ -1070,475 +836,148 @@ class _MapsScreenState extends State<MapsScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 46,
-        height: 46,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
-          color: AppColors.card.withOpacity(0.85),
+          color: Colors.white,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: isActive ? AppColors.primary : Colors.white.withOpacity(0.08),
-            width: 1.2,
-          ),
-          boxShadow: AppColors.softShadow(),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Center(
           child: HugeIcon(
             icon: icon,
-            color: isActive ? AppColors.primary : Colors.white,
-            size: 18,
+            color: isActive ? const Color(0xFF10B981) : const Color(0xFF334155),
+            size: 20,
           ),
         ),
       ),
     );
   }
 
-  // Draggable Bottom Sheet redesign
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            color: const Color(0xFF334155),
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildInteractiveBottomSheet(MapsProvider mapsProvider, BuildContext context) {
     final m = mapsProvider.selectedMarker!;
-    final sessionProvider = context.watch<ChargingSessionProvider>();
-    final activeSession = sessionProvider.activeSession;
     final netColor = _getNetworkColor(m.network);
 
-    Color statusColor = AppColors.secondary;
-    String statusText = 'Available';
-    if (m.status == MarkerStatus.busy) {
-      statusColor = AppColors.warning;
-      statusText = 'Busy';
-    } else if (m.status == MarkerStatus.offline) {
-      statusColor = Colors.grey;
-      statusText = 'Offline';
-    } else if (m.status == MarkerStatus.unknown) {
-      statusColor = const Color(0xFF6B7280);
-      statusText = 'Unknown';
-    }
-
     return DraggableScrollableSheet(
-      initialChildSize: 0.38,
-      minChildSize: 0.20,
-      maxChildSize: 0.85,
+      initialChildSize: 0.45,
+      minChildSize: 0.25,
+      maxChildSize: 0.88,
       builder: (context, scrollController) {
         return Container(
-          decoration: BoxDecoration(
-            color: AppColors.card.withOpacity(0.95),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1D2E),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.6),
-                blurRadius: 30,
-                spreadRadius: 8,
-              )
+              BoxShadow(color: Colors.black45, blurRadius: 20, offset: Offset(0, -4))
             ],
           ),
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: SingleChildScrollView(
+            controller: scrollController,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Pull drag bar
                 Center(
                   child: Container(
-                    width: 48,
-                    height: 5,
-                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10)),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // Station Hero image
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Image.network(
-                    _getHeroImage(m.network),
-                    height: 160,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Title & Network Brand
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: netColor.withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.ev_station, color: netColor, size: 24),
+                    ),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              ChargerSourceBadge(source: m.source, isVerified: m.isVerified, compact: true),
-                              if (m.distanceKm != null) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.06),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white10),
-                                  ),
-                                  child: Text(
-                                    '${m.distanceKm!.toStringAsFixed(1)} km away',
-                                    style: GoogleFonts.outfit(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 8),
                           Text(
                             m.title,
                             style: GoogleFonts.outfit(
                               fontWeight: FontWeight.bold,
-                              fontSize: 20,
+                              fontSize: 18,
                               color: Colors.white,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 2),
                           Row(
                             children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(color: netColor, shape: BoxShape.circle),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                m.network,
-                                style: GoogleFonts.outfit(
-                                  color: netColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.star, color: AppColors.warning, size: 12),
-                              const SizedBox(width: 2),
-                              Text(
-                                m.rating.toString(),
-                                style: GoogleFonts.outfit(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                              Text(m.network, style: GoogleFonts.outfit(color: netColor, fontWeight: FontWeight.bold, fontSize: 13)),
+                              if (m.isVerified) ...[
+                                const SizedBox(width: 8),
+                                const ChargerSourceBadge(source: 'evhub_verified'),
+                              ],
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            m.description,
-                            style: GoogleFonts.outfit(
-                              color: AppColors.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: statusColor.withOpacity(0.3)),
-                      ),
-                      child: Text(
-                        statusText,
-                        style: GoogleFonts.outfit(
-                          color: statusColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white54),
+                      onPressed: () => mapsProvider.setSelectedMarker(null),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-
-                // Specs list metrics
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _buildSheetMetric('POWER', m.power, HugeIcons.strokeRoundedFlash, AppColors.primary),
-                    _buildSheetMetric('STALLS AVAILABLE', m.availableStalls, HugeIcons.strokeRoundedFuelStation, AppColors.secondary),
-                    _buildSheetMetric('RATING', m.rating.toString(), HugeIcons.strokeRoundedStar, AppColors.warning),
-                    _buildSheetMetric('PRICE', m.price ?? '₹21/kWh', HugeIcons.strokeRoundedLicense, Colors.white),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Primary Actions Grid
-                Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Route navigation polyline drawing
-                          mapsProvider.calculateRoute(LatLng(m.latitude, m.longitude));
-                        },
-                        child: Container(
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.06),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white.withOpacity(0.08)),
-                          ),
-                          child: Center(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.navigation_outlined, color: AppColors.primary, size: 18),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Navigate',
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Reservation scheduled for ${m.title}!'),
-                              backgroundColor: AppColors.secondary,
-                            ),
-                          );
-                        },
-                        child: Container(
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.06),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white.withOpacity(0.08)),
-                          ),
-                          child: Center(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.calendar_today_outlined, color: AppColors.warning, size: 16),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Book Slot',
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Charge Now Primary Action
-                GestureDetector(
-                  onTap: () {
-                    if (activeSession != null) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveChargingScreen()));
-                    } else {
-                      final auth = context.read<AuthProvider>();
-                      sessionProvider.startSession(
-                        userId: auth.user?.id ?? 'default_user',
-                        chargerId: m.id,
-                        chargerName: m.title,
-                        connectorType: 'ccs2_1',
-                      );
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveChargingScreen()));
-                    }
-                  },
-                  child: Container(
-                    height: 54,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.chargingGradient,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: AppColors.neonShadow(color: AppColors.primary, blurRadius: 12),
-                    ),
-                    child: Center(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.bolt, color: Colors.black, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Start Charging',
-                            style: GoogleFonts.outfit(
-                              color: Colors.black,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // View Full Charger Details Action
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: m)),
-                    );
-                  },
-                  child: Container(
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
-                    ),
-                    child: Center(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.info_outline, color: Colors.white70, size: 18),
-                          const SizedBox(width: 8),
-                          Text(
-                            'View Full Charger Details',
-                            style: GoogleFonts.outfit(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 28),
-
-                // Nearby places list
-                Text(
-                  'NEARBY AMENITIES',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: Colors.white70,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                mapsProvider.isLoadingPlaces
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    : mapsProvider.nearbyPlaces.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Text(
-                              'No surrounding places found.',
-                              style: GoogleFonts.outfit(color: Colors.grey, fontSize: 13),
-                            ),
-                          )
-                        : SizedBox(
-                            height: 130,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: mapsProvider.nearbyPlaces.length,
-                              itemBuilder: (context, idx) {
-                                final pl = mapsProvider.nearbyPlaces[idx];
-                                return Container(
-                                  width: 170,
-                                  margin: const EdgeInsets.only(right: 12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.03),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: Colors.white.withOpacity(0.08)),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                        child: Image.network(
-                                          pl.imageUrl,
-                                          height: 60,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              pl.name,
-                                              style: GoogleFonts.outfit(
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                                fontSize: 11,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              '${pl.distance.toInt()}m away • ${pl.type.toUpperCase()}',
-                                              style: GoogleFonts.outfit(
-                                                color: Colors.grey,
-                                                fontSize: 9,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-
                 const SizedBox(height: 20),
-
-                // Link to full screen specs
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: m)));
-                  },
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'View Full Specifications & Details',
-                        style: GoogleFonts.outfit(color: AppColors.primary, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 6),
-                      const Icon(Icons.arrow_forward, color: AppColors.primary, size: 14),
-                    ],
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: m)),
+                      );
+                    },
+                    icon: const Icon(Icons.bolt, color: Colors.black, size: 20),
+                    label: Text('START CHARGING & DETAILS', style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 30),
               ],
             ),
           ),
@@ -1547,37 +986,10 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
-  Widget _buildSheetMetric(String label, String value, List<List<dynamic>> icon, Color color) {
-    return Column(
-      children: [
-        HugeIcon(icon: icon, color: color, size: 20),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: GoogleFonts.outfit(
-            fontSize: 8,
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Advanced Filters Bottom Modal redesign
   void _showAdvancedFiltersModal(BuildContext context, MapsProvider provider) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.card,
+      backgroundColor: const Color(0xFF1A1D2E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) {
         return StatefulBuilder(
@@ -1597,15 +1009,9 @@ class _MapsScreenState extends State<MapsScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
-                  // Connectors
                   Text(
                     'CONNECTORS',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                      color: Colors.white60,
-                    ),
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white60),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -1613,12 +1019,9 @@ class _MapsScreenState extends State<MapsScreen> {
                     children: ['CCS2', 'Type 2', 'CHAdeMO'].map((conn) {
                       final active = provider.selectedConnectors.contains(conn);
                       return ChoiceChip(
-                        label: Text(
-                          conn,
-                          style: GoogleFonts.outfit(color: active ? Colors.black : Colors.white),
-                        ),
+                        label: Text(conn, style: GoogleFonts.outfit(color: active ? Colors.black : Colors.white)),
                         selected: active,
-                        selectedColor: AppColors.primary,
+                        selectedColor: const Color(0xFF10B981),
                         backgroundColor: Colors.white.withOpacity(0.06),
                         onSelected: (_) {
                           provider.toggleConnectorFilter(conn);
@@ -1628,15 +1031,9 @@ class _MapsScreenState extends State<MapsScreen> {
                     }).toList(),
                   ),
                   const SizedBox(height: 16),
-
-                  // Power Speed
                   Text(
                     'SPEED',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                      color: Colors.white60,
-                    ),
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white60),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -1644,12 +1041,9 @@ class _MapsScreenState extends State<MapsScreen> {
                     children: ['Fast', 'Ultra Fast', 'AC'].map((spd) {
                       final active = provider.selectedSpeeds.contains(spd);
                       return ChoiceChip(
-                        label: Text(
-                          spd,
-                          style: GoogleFonts.outfit(color: active ? Colors.black : Colors.white),
-                        ),
+                        label: Text(spd, style: GoogleFonts.outfit(color: active ? Colors.black : Colors.white)),
                         selected: active,
-                        selectedColor: AppColors.primary,
+                        selectedColor: const Color(0xFF10B981),
                         backgroundColor: Colors.white.withOpacity(0.06),
                         onSelected: (_) {
                           provider.toggleSpeedFilter(spd);
@@ -1659,16 +1053,11 @@ class _MapsScreenState extends State<MapsScreen> {
                     }).toList(),
                   ),
                   const SizedBox(height: 24),
-
-                  // Actions
                   Row(
                     children: [
                       Expanded(
                         child: TextButton(
-                          child: Text(
-                            'Reset All',
-                            style: GoogleFonts.outfit(color: Colors.redAccent, fontWeight: FontWeight.bold),
-                          ),
+                          child: Text('Reset All', style: GoogleFonts.outfit(color: Colors.redAccent, fontWeight: FontWeight.bold)),
                           onPressed: () {
                             provider.clearAllFilters();
                             Navigator.pop(context);
@@ -1679,15 +1068,12 @@ class _MapsScreenState extends State<MapsScreen> {
                       Expanded(
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
+                            backgroundColor: const Color(0xFF10B981),
                             foregroundColor: Colors.black,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           onPressed: () => Navigator.pop(context),
-                          child: Text(
-                            'Apply',
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-                          ),
+                          child: Text('Apply', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],

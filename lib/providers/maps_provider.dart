@@ -130,8 +130,12 @@ class MapsProvider extends ChangeNotifier {
     loadTripVehiclePreferences();
   }
 
-  // Getters
   List<MapMarkerModel> get markers => _markers;
+
+  void setMarkers(List<MapMarkerModel> markers) {
+    _markers = markers;
+    notifyListeners();
+  }
   Map<String, double>? get currentLocation => _currentLocation;
   String get discoveryMode => _discoveryMode;
   bool get isLoading => _isLoading;
