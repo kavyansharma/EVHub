@@ -5,6 +5,7 @@ import 'package:evhub/repositories/firestore_charger_repository.dart';
 import 'package:evhub/repositories/hybrid_charger_repository.dart';
 import 'package:evhub/services/maps_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'package:evhub/repositories/maps_repository.dart';
 
@@ -85,7 +86,17 @@ class MockMapsServiceForSearch extends MapsService {
   }
 
   @override
-  Future<Map<String, double>> getCurrentLocation() async {
+  Future<bool> isLocationGranted() async {
+    return !shouldFail;
+  }
+
+  @override
+  Future<LocationPermission> requestLocationPermission() async {
+    return shouldFail ? LocationPermission.denied : LocationPermission.whileInUse;
+  }
+
+  @override
+  Future<Map<String, double>> getCurrentLocation({bool requestIfNeeded = false}) async {
     if (shouldFail) throw Exception('Location permissions are denied.');
     return {'latitude': 28.6304, 'longitude': 77.2177};
   }
@@ -290,7 +301,7 @@ void main() {
         firestoreChargerRepository: firestoreRepo,
       );
 
-      await provider.fetchCurrentLocationAndStations();
+      await provider.fetchCurrentLocationAndStations(userInitiated: true);
 
       expect(provider.locationError, isNotNull);
       expect(provider.currentLocation?['latitude'], equals(28.6304)); // Fallback New Delhi

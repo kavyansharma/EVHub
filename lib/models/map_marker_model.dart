@@ -59,6 +59,17 @@ class MapMarkerModel {
   final String? sourceUrl;
 
   // Phase 8 Computed Helpers
+  String get name => title.trim().isNotEmpty ? title : 'Unknown Charger';
+  String get networkName => network.trim().isNotEmpty ? network : 'Unknown Network';
+  String get displayPower => power.trim().isNotEmpty ? power : 'Power unavailable';
+  String get displayConnectors => connectors.isNotEmpty ? connectors.join(', ') : 'Connector unavailable';
+  String get displayAddress => (address != null && address!.trim().isNotEmpty)
+      ? address!
+      : (description.trim().isNotEmpty
+          ? description
+          : 'Coordinates: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}');
+  String get pricePerKwh => (price != null && price!.trim().isNotEmpty) ? price! : 'Price unavailable';
+
   int get availableConnectorsCount {
     if (source == 'google_places' || !isVerified) return 0;
     final parts = availableStalls.split('/');

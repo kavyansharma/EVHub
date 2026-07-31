@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:hugeicons/hugeicons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
@@ -98,6 +99,13 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   Future<void> _moveToCurrentLocation() async {
     try {
+      final isGranted = await _mapsService.isLocationGranted();
+      if (!isGranted) {
+        final perm = await _mapsService.requestLocationPermission();
+        if (perm != LocationPermission.whileInUse && perm != LocationPermission.always) {
+          throw Exception('Location permission denied.');
+        }
+      }
       final locMap = await _mapsService.getCurrentLocation();
       final latLng = LatLng(locMap['latitude']!, locMap['longitude']!);
 

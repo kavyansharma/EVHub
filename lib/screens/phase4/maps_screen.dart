@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -7,7 +6,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../../providers/maps_provider.dart';
 import '../../core/constants/map_constants.dart';
@@ -15,7 +13,6 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/charger_marker_factory.dart';
 import '../../core/widgets/charger_marker_details_sheet.dart';
 import '../../models/map_marker_model.dart';
-import '../../services/maps_service.dart';
 
 class MapsScreen extends StatefulWidget {
   const MapsScreen({super.key});
@@ -31,8 +28,6 @@ class _MapsScreenState extends State<MapsScreen> {
   bool _showCountCard = true;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  StreamSubscription<Position>? _positionSubscription;
-  final MapsService _mapsService = MapsService();
   bool _isSuggestionsVisible = false;
 
   @override
@@ -43,20 +38,9 @@ class _MapsScreenState extends State<MapsScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<MapsProvider>();
-      provider.fetchCurrentLocationAndStations().then((_) {
+      provider.fetchCurrentLocationAndStations(userInitiated: false).then((_) {
         _recenterCamera();
-        final err = provider.locationError;
-        if (err != null && mounted) {
-          _showLocationErrorDialog(err);
-          provider.clearLocationError();
-        }
       });
-    });
-
-    _positionSubscription = _mapsService.getPositionStream().listen((pos) {
-      if (mounted) {
-        context.read<MapsProvider>().updateLiveLocation(pos.latitude, pos.longitude);
-      }
     });
 
     _searchFocusNode.addListener(() {
@@ -78,48 +62,19 @@ class _MapsScreenState extends State<MapsScreen> {
     }
   }
 
-  void _showLocationErrorDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.location_off, color: Color(0xFFF59E0B), size: 22),
-            const SizedBox(width: 10),
-            Text(
-              'Location Issue',
-              style: GoogleFonts.outfit(color: const Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: GoogleFonts.outfit(color: const Color(0xFF475569), fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK', style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void dispose() {
     context.read<MapsProvider>().stopAutoRefresh();
-    _positionSubscription?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
 
-  void _recenterCamera() {
+  void _recenterCamera() async {
     final mapsProvider = context.read<MapsProvider>();
+    if (!mapsProvider.hasLocationPermission) {
+      await mapsProvider.requestUserLocationAccess();
+    }
     if (_mapController != null && mapsProvider.currentLocation != null) {
       final targetLatLng = LatLng(
         mapsProvider.currentLocation!['latitude']!,
@@ -198,13 +153,15 @@ class _MapsScreenState extends State<MapsScreen> {
   }
 
   void _openChargerDetailsSheet(BuildContext context, MapMarkerModel charger) {
-    debugPrint('[EVHUB_MARKER_TAP] markerId=${charger.id}');
-    debugPrint('[EVHUB_SELECTED_CHARGER] id=${charger.id}, name=${charger.title}, network=${charger.network}, lat=${charger.latitude}, lng=${charger.longitude}');
-    
-    showModalBottomSheet(
+    debugPrint("OPEN SHEET");
+    debugPrint("charger object received: ${charger.id} - ${charger.name}");
+    if (!mounted) return;
+    showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: false,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
       builder: (_) => ChargerMarkerDetailsSheet(charger: charger),
     );
   }
@@ -225,6 +182,13 @@ class _MapsScreenState extends State<MapsScreen> {
         icon: icon,
         anchor: const Offset(0.5, 1.0),
         onTap: () {
+          debugPrint("MARKER TAP");
+          debugPrint("id: ${m.id}");
+          debugPrint("name: ${m.name}");
+          debugPrint("network: ${m.networkName}");
+          debugPrint("latitude: ${m.latitude}");
+          debugPrint("longitude: ${m.longitude}");
+
           mapsProvider.setSelectedMarker(m);
           _searchFocusNode.unfocus();
           if (mounted) {
@@ -328,7 +292,7 @@ class _MapsScreenState extends State<MapsScreen> {
               },
               markers: mapMarkers,
               polylines: polylines,
-              myLocationEnabled: true,
+              myLocationEnabled: mapsProvider.hasLocationPermission,
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
               compassEnabled: true,
@@ -549,6 +513,12 @@ class _MapsScreenState extends State<MapsScreen> {
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         children: [
+                          if (!mapsProvider.hasLocationPermission)
+                            _buildFilterChip('📍 Enable Live GPS', false, () {
+                              mapsProvider.requestUserLocationAccess().then((_) {
+                                _recenterCamera();
+                              });
+                            }),
                           _buildFilterChip('⭐ EVHub Verified', mapsProvider.selectedSourceFilter == 'EVHub Verified', () {
                             mapsProvider.setSourceFilter(
                               mapsProvider.selectedSourceFilter == 'EVHub Verified' ? 'All Sources' : 'EVHub Verified',

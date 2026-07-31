@@ -51,8 +51,13 @@ class MapsProvider extends ChangeNotifier {
   bool _isLoadingPlaces = false;
   bool _isLoadingRoute = false;
 
-  // GPS / location error state — shown in UI dialog
+  // GPS / location permission & state
+  bool _hasLocationPermission = false;
+  bool _isLocationDenied = false;
   String? _locationError;
+
+  bool get hasLocationPermission => _hasLocationPermission;
+  bool get isLocationDenied => _isLocationDenied;
 
   // Search autocomplete list & debounce timer
   List<Map<String, dynamic>> _suggestions = [];
@@ -263,16 +268,21 @@ class MapsProvider extends ChangeNotifier {
   }
 
   // ─── Real-Time Stream Initialization ─────────────────────────────────────
-  void startRealtimeStreams() {
-    // 1. Live GPS tracking stream
+  void startRealtimeStreams() async {
+    // 1. Live GPS tracking stream ONLY if permission is granted
     _positionStreamSub?.cancel();
-    _positionStreamSub = _mapsService.getPositionStream().listen((pos) {
-      updateLiveLocation(pos.latitude, pos.longitude);
-    }, onError: (e) {
-      debugPrint('[MapsProvider] GPS stream error: $e');
-    });
+    if (_hasLocationPermission) {
+      final isGranted = await _mapsService.isLocationGranted();
+      if (isGranted) {
+        _positionStreamSub = _mapsService.getPositionStream().listen((pos) {
+          updateLiveLocation(pos.latitude, pos.longitude);
+        }, onError: (e) {
+          debugPrint('[MapsProvider] GPS stream error: $e');
+        });
+      }
+    }
 
-    // 2. Real-time Firestore chargers stream
+    // 2. Real-time Firestore chargers stream (Works independently of GPS!)
     _firestoreStreamSub?.cancel();
     _firestoreStreamSub = _firestoreChargerRepository.streamPublicVerifiedChargers().listen((verifiedChargers) {
       debugPrint('[MapsProvider] Real-time Firestore update: ${verifiedChargers.length} verified chargers');
@@ -310,6 +320,7 @@ class MapsProvider extends ChangeNotifier {
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       debugPrint('[MapsProvider] Auto-refresh: fetching updated charger list');
+      // Only attempt live GPS refresh if permission is already granted; otherwise refresh for current map center
       await refreshStations();
     });
     startRealtimeStreams();
@@ -332,33 +343,43 @@ class MapsProvider extends ChangeNotifier {
   }
 
   // ─── Fetch location and load real stations via Nearby Search API ──────────
-  Future<void> fetchCurrentLocationAndStations() async {
+  Future<void> fetchCurrentLocationAndStations({bool userInitiated = false}) async {
     _isLoading = true;
     _locationError = null;
     notifyListeners();
 
     try {
-      debugPrint('[MapsProvider] Requesting live GPS position...');
-      _currentLocation = await _mapsService.getCurrentLocation();
-      debugPrint('[MapsProvider] GPS received: $_currentLocation');
-    } catch (e) {
-      final errMsg = e.toString();
-      debugPrint('[MapsProvider] GPS error: $errMsg');
+      final isGranted = await _mapsService.isLocationGranted();
 
-      if (errMsg.contains('disabled')) {
-        _locationError = 'Location services are disabled. Please enable GPS to find chargers near you.';
-      } else if (errMsg.contains('permanently denied')) {
-        _locationError = 'Location permission was permanently denied. Please enable it in App Settings.';
-      } else if (errMsg.contains('denied')) {
-        _locationError = 'Location permission was denied. Showing chargers near New Delhi.';
+      if (isGranted) {
+        _hasLocationPermission = true;
+        _isLocationDenied = false;
+        debugPrint('[MapsProvider] Live GPS permission already granted. Fetching position...');
+        _currentLocation = await _mapsService.getCurrentLocation();
+      } else if (userInitiated) {
+        debugPrint('[MapsProvider] User explicitly requested location access...');
+        final permission = await _mapsService.requestLocationPermission();
+        if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+          _hasLocationPermission = true;
+          _isLocationDenied = false;
+          _currentLocation = await _mapsService.getCurrentLocation();
+        } else {
+          _hasLocationPermission = false;
+          _isLocationDenied = true;
+          _locationError = 'Location permission is disabled. You can search chargers manually.';
+          _useFallbackLocation();
+        }
       } else {
-        _locationError = 'Could not determine your location. Showing chargers near New Delhi.';
+        // Passive initial load — DO NOT prompt user for permission
+        debugPrint('[MapsProvider] Passive load: GPS permission not granted. Using fallback center without prompt.');
+        _hasLocationPermission = false;
+        _isLocationDenied = true;
+        _useFallbackLocation();
       }
-
-      _currentLocation = {
-        'latitude': 28.6304,
-        'longitude': 77.2177,
-      };
+    } catch (e) {
+      debugPrint('[MapsProvider] GPS fetch error: $e');
+      _hasLocationPermission = false;
+      _useFallbackLocation();
     }
 
     await refreshStations();
@@ -368,9 +389,21 @@ class MapsProvider extends ChangeNotifier {
     startAutoRefresh();
   }
 
+  void _useFallbackLocation() {
+    _currentLocation ??= {
+      'latitude': 28.6304,
+      'longitude': 77.2177,
+    };
+  }
+
   void clearLocationError() {
     _locationError = null;
     notifyListeners();
+  }
+
+  /// Explicit user-initiated request for live GPS location access (e.g. from "Enable Live GPS" chip or location FAB)
+  Future<void> requestUserLocationAccess() async {
+    await fetchCurrentLocationAndStations(userInitiated: true);
   }
 
   // ─── Refresh chargers listing (Hybrid: Firestore + Google Places) ──────────────

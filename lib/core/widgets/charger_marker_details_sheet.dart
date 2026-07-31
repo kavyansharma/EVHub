@@ -33,8 +33,19 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[EVHUB_BOTTOM_SHEET_BUILD] chargerId=${charger.id}, title=${charger.title}');
-    final netColor = _getNetworkColor(charger.network);
+    debugPrint('SHEET BUILD');
+    debugPrint('id: ${charger.id}');
+    debugPrint('name: ${charger.name}');
+    debugPrint('network: ${charger.networkName}');
+    debugPrint('latitude: ${charger.latitude}');
+    debugPrint('longitude: ${charger.longitude}');
+    debugPrint('status: ${charger.status}');
+    debugPrint('power: ${charger.power}');
+    debugPrint('connectors: ${charger.connectors}');
+    debugPrint('address: ${charger.address}');
+    debugPrint('price: ${charger.price}');
+
+    final netColor = _getNetworkColor(charger.networkName);
 
     return Consumer<MapsProvider>(
       builder: (context, mapsProvider, _) {
@@ -42,12 +53,9 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
         final selectedVehicle = mapsProvider.selectedVehicle;
 
         // Pricing & Tariff
-        final costService = const SmartTripEnergyCostService();
-        final tariffResult = costService.determineTariff(charger, mapsProvider.costSettings);
-        final tariffPrice = tariffResult.price;
-        final priceDisplay = (tariffPrice != null && tariffPrice > 0)
-            ? '₹${tariffPrice.toStringAsFixed(1).replaceAll('.0', '')}/kWh'
-            : 'Price unavailable';
+        final priceDisplay = (charger.price != null && charger.price!.trim().isNotEmpty)
+            ? charger.price!
+            : charger.pricePerKwh;
 
         // EV Compatibility
         final compStatus = SmartChargerRankingService.checkCompatibility(
@@ -58,260 +66,265 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
         // Power kW
         final powerKw = ChargingTimeEstimatorService.parsePowerKW(charger.power);
 
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF1A1D2E),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            boxShadow: [
-              BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, -4))
-            ],
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top drag indicator handle bar
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white30,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // HEADER ROW: Icon, Title, Network, Verified, Favorite, Close
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+        return SafeArea(
+          bottom: true,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF1A1D2E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              boxShadow: [
+                BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, -4))
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: netColor.withOpacity(0.15),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: netColor.withOpacity(0.4), width: 1.5),
-                    ),
-                    child: Center(
-                      child: Icon(Icons.ev_station, color: netColor, size: 26),
+                  // Top drag indicator handle bar
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white30,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
+                  const SizedBox(height: 12),
+
+                  // HEADER ROW: Icon, Title, Network, Verified, Favorite, Close
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: netColor.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: netColor.withOpacity(0.4), width: 1.5),
+                        ),
+                        child: Center(
+                          child: Icon(Icons.ev_station, color: netColor, size: 26),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              charger.name,
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                                color: Colors.white,
+                                height: 1.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 3),
+                            Row(
+                              children: [
+                                Text(
+                                  charger.networkName,
+                                  style: GoogleFonts.outfit(
+                                    color: netColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                if (charger.isVerified || charger.source == 'evhub_verified') ...[
+                                  const SizedBox(width: 8),
+                                  const ChargerSourceBadge(source: 'evhub_verified'),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          isFav ? Icons.star : Icons.star_border,
+                          color: isFav ? const Color(0xFFF59E0B) : Colors.white60,
+                          size: 24,
+                        ),
+                        onPressed: () => mapsProvider.toggleFavorite(charger.id),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54, size: 22),
+                        onPressed: () {
+                          mapsProvider.setSelectedMarker(null);
+                          Navigator.of(context).maybePop();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // STATUS BADGE & POWER & CONNECTORS ROW
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _buildStatusBadge(charger.status),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.bolt, color: Color(0xFFF59E0B), size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              powerKw > 0 ? '${powerKw.toStringAsFixed(0)} kW' : charger.displayPower,
+                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3B82F6).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          charger.displayConnectors,
+                          style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // LOCATION & DISTANCE ROW
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white.withOpacity(0.08)),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          charger.title.trim().isNotEmpty ? charger.title : 'EV Charging Station',
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: Colors.white,
-                            height: 1.2,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 3),
                         Row(
                           children: [
-                            Text(
-                              charger.network.trim().isNotEmpty ? charger.network : 'EV Charging Network',
-                              style: GoogleFonts.outfit(
-                                color: netColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
+                            const Icon(Icons.location_on_outlined, color: Color(0xFF10B981), size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                charger.displayAddress,
+                                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (charger.isVerified || charger.source == 'evhub_verified') ...[
-                              const SizedBox(width: 8),
-                              const ChargerSourceBadge(source: 'evhub_verified'),
-                            ],
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      isFav ? Icons.star : Icons.star_border,
-                      color: isFav ? const Color(0xFFF59E0B) : Colors.white60,
-                      size: 24,
-                    ),
-                    onPressed: () => mapsProvider.toggleFavorite(charger.id),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54, size: 22),
-                    onPressed: () {
-                      mapsProvider.setSelectedMarker(null);
-                      Navigator.of(context).maybePop();
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // STATUS BADGE & POWER & CONNECTORS ROW
-              Row(
-                children: [
-                  _buildStatusBadge(charger.status),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white10),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.bolt, color: Color(0xFFF59E0B), size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          powerKw > 0 ? '${powerKw.toStringAsFixed(0)} kW' : 'Power N/A',
-                          style: GoogleFonts.outfit(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3B82F6).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      charger.connectors.isNotEmpty ? charger.connectors.join(', ') : 'CCS2',
-                      style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // LOCATION & DISTANCE ROW
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.04),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white.withOpacity(0.08)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on_outlined, color: Color(0xFF10B981), size: 16),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            charger.description.trim().isNotEmpty
-                                ? charger.description
-                                : 'Coordinates: ${charger.latitude.toStringAsFixed(4)}, ${charger.longitude.toStringAsFixed(4)}',
-                            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (charger.distanceKm != null) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.near_me, color: Color(0xFF3B82F6), size: 14),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${charger.distanceKm!.toStringAsFixed(1)} km away',
-                            style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 12),
+                        if (charger.distanceKm != null) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Icon(Icons.near_me, color: Color(0xFF3B82F6), size: 14),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${charger.distanceKm!.toStringAsFixed(1)} km away',
+                                style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ],
                           ),
                         ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // TARIFF & EV COMPATIBILITY ROW
+                  Row(
+                    children: [
+                      const Icon(Icons.currency_rupee, color: Color(0xFF10B981), size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Tariff: ',
+                        style: GoogleFonts.outfit(color: Colors.white60, fontSize: 12),
+                      ),
+                      Text(
+                        priceDisplay,
+                        style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const Spacer(),
+                      _buildCompatibilityBadge(compStatus),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ACTION BUTTONS: NAVIGATE TO CHARGER + START & FULL DETAILS
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: SizedBox(
+                          height: 50,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              const NavigationLauncherService().launchNavigation(
+                                charger.latitude,
+                                charger.longitude,
+                              );
+                            },
+                            icon: const Icon(Icons.navigation_outlined, color: Color(0xFF3B82F6), size: 18),
+                            label: Text(
+                              'NAVIGATE',
+                              style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: SizedBox(
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: charger)),
+                              );
+                            },
+                            icon: const Icon(Icons.bolt, color: Colors.black, size: 20),
+                            label: Text(
+                              'START CHARGING',
+                              style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF10B981),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // TARIFF & EV COMPATIBILITY ROW
-              Row(
-                children: [
-                  const Icon(Icons.currency_rupee, color: Color(0xFF10B981), size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Tariff: ',
-                    style: GoogleFonts.outfit(color: Colors.white60, fontSize: 12),
-                  ),
-                  Text(
-                    priceDisplay,
-                    style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  const Spacer(),
-                  _buildCompatibilityBadge(compStatus),
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              // ACTION BUTTONS: NAVIGATE TO CHARGER + START & FULL DETAILS
-              Row(
-                children: [
-                  Expanded(
-                    flex: 1,
-                    child: SizedBox(
-                      height: 50,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          const NavigationLauncherService().launchNavigation(
-                            charger.latitude,
-                            charger.longitude,
-                          );
-                        },
-                        icon: const Icon(Icons.navigation_outlined, color: Color(0xFF3B82F6), size: 18),
-                        label: Text(
-                          'NAVIGATE',
-                          style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: SizedBox(
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: charger)),
-                          );
-                        },
-                        icon: const Icon(Icons.bolt, color: Colors.black, size: 20),
-                        label: Text(
-                          'START & FULL DETAILS',
-                          style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                      ),
-                    ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         );
       },
@@ -342,7 +355,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       case MarkerStatus.unknown:
         bg = Colors.grey.withOpacity(0.2);
         fg = Colors.white70;
-        label = 'UNKNOWN';
+        label = 'Availability unknown';
         break;
     }
 
@@ -390,7 +403,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
         break;
       case EVCompatibilityStatus.noVehicleSelected:
         fg = Colors.white60;
-        label = 'Select EV';
+        label = 'Select your EV';
         break;
     }
 

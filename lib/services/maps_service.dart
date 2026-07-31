@@ -282,25 +282,28 @@ class MapsService {
   }
 
   // 4. Live GPS with Geolocator
-  Future<Map<String, double>> getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+  Future<LocationPermission> checkLocationPermission() async {
+    return await Geolocator.checkPermission();
+  }
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  Future<bool> isLocationGranted() async {
+    final permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.whileInUse || permission == LocationPermission.always;
+  }
+
+  Future<LocationPermission> requestLocationPermission() async {
+    return await Geolocator.requestPermission();
+  }
+
+  Future<Map<String, double>> getCurrentLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       throw Exception('Location services are disabled.');
     }
 
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        throw Exception('Location permissions are denied.');
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      throw Exception('Location permissions are permanently denied.');
+    final isGranted = await isLocationGranted();
+    if (!isGranted) {
+      throw Exception('Location permission is not granted.');
     }
 
     final position = await Geolocator.getCurrentPosition(

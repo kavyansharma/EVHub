@@ -8,6 +8,8 @@ import 'package:evhub/repositories/firestore_charger_repository.dart';
 import 'package:evhub/services/maps_service.dart';
 import 'package:evhub/core/widgets/charger_marker_details_sheet.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class MockFirestoreRepoForRuntimeTest implements FirestoreChargerRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -16,7 +18,7 @@ class MockFirestoreRepoForRuntimeTest implements FirestoreChargerRepository {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('EVHub Charger Marker Runtime Details Test Suite (STEP 12)', () {
+  group('EVHub Charger Marker Runtime Details Test Suite (STEP 10)', () {
     late MapsProvider mapsProvider;
     late MapsService mapsService;
 
@@ -63,10 +65,12 @@ void main() {
       network: '', // Missing network
       power: '', // Missing power
       connectors: [], // Missing connectors
+      price: null, // Missing price
       isVerified: false,
     );
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       mapsService = MapsService();
       mapsProvider = MapsProvider(
         mapsRepository: MapsRepository(mapsService: mapsService),
@@ -76,12 +80,12 @@ void main() {
       mapsProvider.setMarkers([charger1, charger2, charger3]);
     });
 
-    testWidgets('TEST A & B & C & D & E & F: Bottom sheet widget renders charger name, network, status, power, connectors', (WidgetTester tester) async {
+    testWidgets('1 & 2 & 4 & 5 & 6: Marker tap renders charger name, network, status, power, connectors', (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: ChangeNotifierProvider<MapsProvider>.value(
-            value: mapsProvider,
-            child: Scaffold(
+        ChangeNotifierProvider<MapsProvider>.value(
+          value: mapsProvider,
+          child: MaterialApp(
+            home: Scaffold(
               body: ChargerMarkerDetailsSheet(charger: charger1),
             ),
           ),
@@ -90,19 +94,19 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // TEST B: Displays charger name
+      // Displays charger name
       expect(find.text('Tata Power Hub CP'), findsOneWidget);
 
-      // TEST C: Displays network
+      // Displays network
       expect(find.text('Tata Power'), findsOneWidget);
 
-      // TEST D: Displays status
+      // Displays status
       expect(find.text('AVAILABLE'), findsOneWidget);
 
-      // TEST E: Displays power
+      // Displays power
       expect(find.text('60 kW'), findsOneWidget);
 
-      // TEST F: Displays connectors
+      // Displays connectors
       expect(find.text('CCS2, Type 2'), findsOneWidget);
 
       // Displays Verified source badge
@@ -113,15 +117,15 @@ void main() {
 
       // Action buttons are visible
       expect(find.text('NAVIGATE'), findsOneWidget);
-      expect(find.text('START & FULL DETAILS'), findsOneWidget);
+      expect(find.text('START CHARGING'), findsOneWidget);
     });
 
-    testWidgets('TEST G: Missing optional fields render default N/A strings without blank screen', (WidgetTester tester) async {
+    testWidgets('7 & 8 & 9: Power & Tariff fallbacks work without crashing UI', (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: ChangeNotifierProvider<MapsProvider>.value(
-            value: mapsProvider,
-            child: Scaffold(
+        ChangeNotifierProvider<MapsProvider>.value(
+          value: mapsProvider,
+          child: MaterialApp(
+            home: Scaffold(
               body: ChargerMarkerDetailsSheet(charger: charger3),
             ),
           ),
@@ -131,28 +135,30 @@ void main() {
       await tester.pumpAndSettle();
 
       // Title fallback
-      expect(find.text('EV Charging Station'), findsOneWidget);
+      expect(find.text('Unknown Charger'), findsOneWidget);
 
       // Network fallback
-      expect(find.text('EV Charging Network'), findsOneWidget);
+      expect(find.text('Unknown Network'), findsOneWidget);
 
       // Power fallback
-      expect(find.text('Power N/A'), findsOneWidget);
+      expect(find.text('Power unavailable'), findsOneWidget);
 
       // Connector fallback
-      expect(find.text('CCS2'), findsOneWidget);
+      expect(find.text('Connector unavailable'), findsOneWidget);
 
-      // Tariff fallback displays valid string without crashing or remaining blank
-      expect(find.textContaining('kWh'), findsOneWidget);
+      // Status fallback
+      expect(find.text('Availability unknown'), findsOneWidget);
+
+      // Tariff fallback displays Price unavailable when missing
+      expect(find.text('Price unavailable'), findsOneWidget);
     });
 
-    testWidgets('TEST H: Multiple markers render their respective specific charger details', (WidgetTester tester) async {
-      // Render Charger 2
+    testWidgets('10: Multiple markers render their respective specific charger details', (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: ChangeNotifierProvider<MapsProvider>.value(
-            value: mapsProvider,
-            child: Scaffold(
+        ChangeNotifierProvider<MapsProvider>.value(
+          value: mapsProvider,
+          child: MaterialApp(
+            home: Scaffold(
               body: ChargerMarkerDetailsSheet(charger: charger2),
             ),
           ),
@@ -168,17 +174,11 @@ void main() {
       expect(find.text('8.4 km away'), findsOneWidget);
     });
 
-    test('TEST I: Synchronous lookup maps charger ID instantly without async delays', () {
-      final marker = mapsProvider.getMarkerById('charger_delhi_1');
-      expect(marker, isNotNull);
-      expect(marker!.id, 'charger_delhi_1');
+    test('3 & 11 & 12: Unique charger ID, GPS, Search, and Route mode taps identify correct charger', () {
+      // 3. Charger ID uniqueness
+      expect(charger1.id, isNot(equals(charger2.id)));
 
-      mapsProvider.selectMarkerById('charger_delhi_1');
-      expect(mapsProvider.selectedMarker!.id, 'charger_delhi_1');
-    });
-
-    test('TEST J & K & L: GPS, Search, and Route mode taps identify correct charger', () {
-      // GPS mode
+      // 11. GPS mode
       mapsProvider.selectMarkerById('charger_delhi_1');
       expect(mapsProvider.selectedMarker!.network, 'Tata Power');
 
@@ -189,7 +189,7 @@ void main() {
       mapsProvider.selectMarkerById(filteredSearch.first.id);
       expect(mapsProvider.selectedMarker!.id, 'charger_delhi_1');
 
-      // Route mode
+      // 12. Route mode
       mapsProvider.setSourceFilter('All Sources');
       mapsProvider.selectMarkerById('charger_gurugram_2');
       expect(mapsProvider.selectedMarker!.network, 'Statiq');

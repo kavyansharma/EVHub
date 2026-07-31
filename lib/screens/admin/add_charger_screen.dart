@@ -10,6 +10,7 @@ import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/admin_charger_provider.dart';
 import '../../services/charger_image_service.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../services/maps_service.dart';
 import 'location_picker_screen.dart';
 
@@ -196,6 +197,13 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
     });
 
     try {
+      final isGranted = await _mapsService.isLocationGranted();
+      if (!isGranted) {
+        final perm = await _mapsService.requestLocationPermission();
+        if (perm != LocationPermission.whileInUse && perm != LocationPermission.always) {
+          throw Exception('Location permission denied.');
+        }
+      }
       final loc = await _mapsService.getCurrentLocation();
       final double lat = loc['latitude']!;
       final double lng = loc['longitude']!;
