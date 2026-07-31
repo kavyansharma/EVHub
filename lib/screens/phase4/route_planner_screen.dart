@@ -321,43 +321,91 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   Future<void> _selectSuggestion(LocationSearchResult suggestion, bool isStart) async {
-    LocationSearchResult resolved = suggestion;
-
-    if (resolved.latitude == 0.0 || resolved.longitude == 0.0) {
-      try {
-        LatLng? coords;
-        if (resolved.placeId != null && resolved.placeId!.isNotEmpty && resolved.placeId!.startsWith('ChI')) {
-          coords = await _mapsService.getPlaceCoordinates(resolved.placeId!);
-        }
-        coords ??= await _mapsService.getCoordinatesFromAddress(resolved.displayName);
-        if (coords != null) {
-          resolved = LocationSearchResult(
-            displayName: resolved.displayName,
-            subtitle: resolved.subtitle,
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            placeId: resolved.placeId,
-            source: resolved.source,
-          );
-        }
-      } catch (e) {
-        debugPrint('[RoutePlannerScreen] Error resolving coordinates: $e');
-      }
-    }
-
+    // Show spinner immediately while we resolve the coordinates
     setState(() {
       if (isStart) {
-        _selectedOrigin = resolved;
-        _startController.text = resolved.displayName;
+        _isSearchingStart = true;
+        _startController.text = suggestion.displayName;
         _startSuggestions = [];
         _startFocusNode.unfocus();
       } else {
-        _selectedDestination = resolved;
-        _endController.text = resolved.displayName;
+        _isSearchingEnd = true;
+        _endController.text = suggestion.displayName;
         _endSuggestions = [];
         _endFocusNode.unfocus();
       }
     });
+
+    LocationSearchResult resolved = suggestion;
+
+    // If no valid coordinates: resolve via Place Details API, then Geocoding fallback
+    if (resolved.latitude == 0.0 || resolved.longitude == 0.0) {
+      debugPrint('[TRIP_DEBUG] Resolving coordinates for: "${suggestion.displayName}" placeId=${suggestion.placeId}');
+      LatLng? coords;
+
+      // Step 1: Try Place Details API (works for any valid placeId)
+      if (suggestion.placeId != null && suggestion.placeId!.isNotEmpty) {
+        try {
+          coords = await _mapsService.getPlaceCoordinates(suggestion.placeId!);
+          debugPrint('[TRIP_DEBUG] Place Details result: $coords');
+        } catch (e) {
+          debugPrint('[TRIP_DEBUG] Place Details failed: $e');
+        }
+      }
+
+      // Step 2: Geocoding API fallback
+      if (coords == null) {
+        debugPrint('[TRIP_DEBUG] Falling back to Geocoding API for: "${suggestion.displayName}"');
+        try {
+          coords = await _mapsService.getCoordinatesFromAddress(suggestion.displayName);
+          debugPrint('[TRIP_DEBUG] Geocoding result: $coords');
+        } catch (e) {
+          debugPrint('[TRIP_DEBUG] Geocoding failed: $e');
+        }
+      }
+
+      if (coords != null) {
+        resolved = LocationSearchResult(
+          displayName: suggestion.displayName,
+          subtitle: suggestion.subtitle,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          placeId: suggestion.placeId,
+          source: suggestion.source,
+        );
+        debugPrint('[TRIP_DEBUG] ${isStart ? "Origin" : "Destination"} resolved: ${resolved.displayName} @ (${resolved.latitude}, ${resolved.longitude})');
+      } else {
+        // Could not resolve — show error and clear the field
+        if (mounted) {
+          setState(() {
+            if (isStart) { _isSearchingStart = false; _startController.clear(); }
+            else { _isSearchingEnd = false; _endController.clear(); }
+          });
+          _showSnackbar(
+            'Could not find coordinates for "${suggestion.displayName}". '
+            'Try selecting a more specific suggestion from the list.',
+            isError: true,
+          );
+        }
+        return;
+      }
+    } else {
+      debugPrint('[TRIP_DEBUG] ${isStart ? "Origin" : "Destination"} already has coordinates: (${resolved.latitude}, ${resolved.longitude})');
+    }
+
+    if (mounted) {
+      setState(() {
+        if (isStart) {
+          _selectedOrigin = resolved;
+          _startController.text = resolved.displayName;
+          _isSearchingStart = false;
+        } else {
+          _selectedDestination = resolved;
+          _endController.text = resolved.displayName;
+          _isSearchingEnd = false;
+        }
+      });
+    }
   }
 
   void _swapLocations() {
@@ -387,11 +435,20 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _endFocusNode.unfocus();
 
     if (_selectedOrigin == null || _startController.text.trim().isEmpty) {
-      _showSnackbar('Please select a starting location.', isError: true);
+      _showSnackbar('Please select a starting location from the suggestions.', isError: true);
       return;
     }
     if (_selectedDestination == null || _endController.text.trim().isEmpty) {
-      _showSnackbar('Please select a destination.', isError: true);
+      _showSnackbar('Please select a destination from the suggestions.', isError: true);
+      return;
+    }
+    // If the user typed but didn't select a suggestion, try to resolve now
+    if (_selectedOrigin!.latitude == 0.0 && _selectedOrigin!.longitude == 0.0) {
+      _showSnackbar('Please wait — resolving origin location...', isError: false);
+      return;
+    }
+    if (_selectedDestination!.latitude == 0.0 && _selectedDestination!.longitude == 0.0) {
+      _showSnackbar('Please wait — resolving destination location...', isError: false);
       return;
     }
     if (_selectedOrigin!.latitude == _selectedDestination!.latitude &&
@@ -399,6 +456,14 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       _showSnackbar('Start and destination must be different.', isError: true);
       return;
     }
+
+    debugPrint('[TRIP_DEBUG] Route request started');
+    debugPrint('[TRIP_DEBUG] Origin selected: ${_selectedOrigin!.displayName}');
+    debugPrint('[TRIP_DEBUG] Origin latitude: ${_selectedOrigin!.latitude}');
+    debugPrint('[TRIP_DEBUG] Origin longitude: ${_selectedOrigin!.longitude}');
+    debugPrint('[TRIP_DEBUG] Destination selected: ${_selectedDestination!.displayName}');
+    debugPrint('[TRIP_DEBUG] Destination latitude: ${_selectedDestination!.latitude}');
+    debugPrint('[TRIP_DEBUG] Destination longitude: ${_selectedDestination!.longitude}');
 
     final provider = context.read<MapsProvider>();
     await provider.planTrip(origin: _selectedOrigin!, destination: _selectedDestination!);
@@ -444,6 +509,8 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     final mp         = context.watch<MapsProvider>();
 
     final isRouteActive = mp.discoveryMode == 'route' && mp.routePoints.isNotEmpty;
+    final isRouteFailed = mp.discoveryMode == 'route' && mp.routePoints.isEmpty
+        && !mp.isLoadingRoute && !mp.isLoading;
     final chargersList  = mp.getFilteredMarkers();
 
     return Scaffold(
@@ -461,7 +528,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
             tooltip: 'Cost Settings',
             onPressed: () => _showCostSettingsSheet(context, mp),
           ),
-          if (isRouteActive)
+          if (isRouteActive || isRouteFailed)
             IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
               tooltip: 'Clear Trip',
@@ -505,6 +572,8 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                   _buildLoadingCard(brandColor, 'Calculating route & finding corridor chargers...')
                 else if (mp.isCalculatingSmartTrip)
                   _buildLoadingCard(brandColor, 'Calculating smart charging recommendations...')
+                else if (isRouteFailed)
+                  _buildRouteFailedCard(brandColor, mp.searchStatusMessage)
                 else if (isRouteActive) ...[
                   // 6. Trip Summary
                   _buildTripSummaryCard(brandColor, mp, chargersList),
@@ -603,17 +672,22 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
               focusNode: _startFocusNode,
               style: GoogleFonts.outfit(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
-                hintText: 'Start Location (e.g. Delhi)',
-                hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 13),
+                hintText: 'e.g. Ansal Heights, Sector 92, Gurugram',
+                hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 12),
                 border: InputBorder.none,
                 isDense: true,
                 suffixIcon: _isSearchingStart
                     ? const Padding(padding: EdgeInsets.all(10.0),
                         child: SizedBox(width: 14, height: 14,
                             child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)))
-                    : null,
+                    : (_selectedOrigin != null && _selectedOrigin!.latitude != 0.0
+                        ? const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 18)
+                        : null),
               ),
-              onChanged: (val) => _onQueryChanged(val, true),
+              onChanged: (val) {
+                _selectedOrigin = null; // Clear selection when user types
+                _onQueryChanged(val, true);
+              },
             ),
             const Divider(height: 24, color: Colors.white12),
             TextField(
@@ -621,17 +695,22 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
               focusNode: _endFocusNode,
               style: GoogleFonts.outfit(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
-                hintText: 'Destination (e.g. Jaipur)',
-                hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 13),
+                hintText: 'e.g. HUDA City Centre, Gurugram',
+                hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 12),
                 border: InputBorder.none,
                 isDense: true,
                 suffixIcon: _isSearchingEnd
                     ? const Padding(padding: EdgeInsets.all(10.0),
                         child: SizedBox(width: 14, height: 14,
                             child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)))
-                    : null,
+                    : (_selectedDestination != null && _selectedDestination!.latitude != 0.0
+                        ? const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 18)
+                        : null),
               ),
-              onChanged: (val) => _onQueryChanged(val, false),
+              onChanged: (val) {
+                _selectedDestination = null; // Clear selection when user types
+                _onQueryChanged(val, false);
+              },
               onSubmitted: (_) => _planTrip(),
             ),
           ])),
@@ -1442,6 +1521,44 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     );
   }
 
+  Widget _buildRouteFailedCard(Color brandColor, String? errorMessage) {
+    return GlassContainer(
+      padding: const EdgeInsets.all(24),
+      borderRadius: 24,
+      child: Column(children: [
+        const Icon(Icons.warning_amber_rounded, color: Color(0xFFF59E0B), size: 48),
+        const SizedBox(height: 14),
+        Text('Route Not Found',
+            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+        Text(
+          errorMessage?.isNotEmpty == true
+              ? errorMessage!
+              : 'Unable to calculate route between the selected locations.\n'
+                'Please check your origin and destination and try again.',
+          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 20),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.lightbulb_outline, color: Color(0xFF10B981), size: 16),
+          const SizedBox(width: 6),
+          Expanded(child: Text(
+            'Tip: Select a location from the autocomplete suggestions for best results.',
+            style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontSize: 11),
+          )),
+        ]),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: _clearTrip,
+          icon: const Icon(Icons.refresh, color: Colors.white70, size: 16),
+          label: Text('Try Again', style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13)),
+          style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildMetricItem(String label, String value, IconData icon, Color color) {
     return Column(children: [
       Icon(icon, color: color, size: 22),
@@ -1455,16 +1572,25 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     return GlassContainer(
       padding: const EdgeInsets.all(20),
       borderRadius: 20,
-      child: Row(children: [
-        const Icon(Icons.info_outline, color: Colors.amber, size: 24),
-        const SizedBox(width: 14),
-        Expanded(child: Text(
-          'No EV chargers found within 10 km of this route corridor.',
-          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13),
-        )),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.info_outline, color: Colors.amber, size: 24),
+          const SizedBox(width: 14),
+          Expanded(child: Text(
+            'No EV chargers found along this route corridor.',
+            style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+          )),
+        ]),
+        const SizedBox(height: 10),
+        Text(
+          'Route found, but no chargers were discovered within 50 km of the route. '
+          'This may be a new route with limited charging infrastructure.',
+          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+        ),
       ]),
     );
   }
+
 
   Widget _buildChargersTimeline(Color brandColor, MapsProvider mp, List<MapMarkerModel> list) {
     final recommendedIds = mp.recommendedStops.map((s) => s.charger.id).toSet();

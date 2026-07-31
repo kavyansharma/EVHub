@@ -104,6 +104,7 @@ class MapsService {
   }
 
   // 2. Google Places Autocomplete API with Automatic Local Fallback
+  // Biased to India (components=country:in) for better results.
   Future<List<Map<String, dynamic>>> getAutocompleteSuggestions(String query, {double? currentLat, double? currentLng}) async {
     final cleanQuery = query.trim();
     if (cleanQuery.isEmpty) return [];
@@ -119,42 +120,58 @@ class MapsService {
     final Map<String, String> queryParams = {
       'input': cleanQuery,
       'key': _apiKey,
+      'components': 'country:in', // Bias to India for exact address support
+      'language': 'en',
     };
 
+    // Add location bias if we have a reference point
     if (currentLat != null && currentLng != null) {
       queryParams['location'] = '$currentLat,$currentLng';
       queryParams['radius'] = '50000'; // 50km bias
     }
 
+    debugPrint('[TRIP_DEBUG] Origin query: $cleanQuery');
     final url = _buildUri('/maps/api/place/autocomplete/json', queryParams);
 
     try {
       apiCalled = true;
-      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      final response = await http.get(url).timeout(const Duration(seconds: 6));
       apiResponseStatus = 'HTTP ${response.statusCode}';
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final status = data['status'] as String? ?? 'UNKNOWN';
         apiResponseStatus = 'API Status: $status';
+        debugPrint('[TRIP_DEBUG] Autocomplete API status: $status for query "$cleanQuery"');
 
         final predictions = data['predictions'] as List<dynamic>?;
         if (predictions != null && predictions.isNotEmpty) {
           googleResultsCount = predictions.length;
           for (final pred in predictions) {
+            final description = pred['description'] as String? ?? cleanQuery;
+            final placeId = pred['place_id'] as String? ?? '';
+            // Extract secondary text for subtitle (e.g. "Haryana, India")
+            final structuredFormatting = pred['structured_formatting'] as Map<String, dynamic>?;
+            final secondaryText = structuredFormatting?['secondary_text'] as String? ?? 'India';
             suggestions.add({
-              'description': pred['description'] as String,
-              'place_id': pred['place_id'] as String,
+              'description': description,
+              'place_id': placeId,
               'type': 'location',
-              'subtitle': 'Location search',
+              'subtitle': secondaryText,
               'source': 'google_places',
+              // Latitude/longitude are 0.0 here; they get resolved in _selectSuggestion
+              'latitude': 0.0,
+              'longitude': 0.0,
             });
           }
+          debugPrint('[TRIP_DEBUG] Autocomplete returned $googleResultsCount Google results for "$cleanQuery"');
+        } else {
+          debugPrint('[TRIP_DEBUG] Autocomplete returned no predictions. Status=$status');
         }
       }
     } catch (e) {
       apiResponseStatus = 'ERROR: $e';
-      debugPrint("Autocomplete API Error (falling back to local index): $e");
+      debugPrint('[TRIP_DEBUG] Autocomplete API Error: $e');
     }
 
     // Always query local fallback dictionary so Indian cities are available alongside Google Places
@@ -179,31 +196,49 @@ class MapsService {
     return suggestions;
   }
 
-  // Fetch coordinates of an Autocomplete suggestion
+  // Fetch coordinates of an Autocomplete suggestion via Place Details API.
+  // FIXED: Removed the incorrect startsWith('ChI') guard — all non-empty Google Place IDs are valid.
   Future<LatLng?> getPlaceCoordinates(String placeId) async {
-    if (placeId.isEmpty || !placeId.startsWith('ChI')) {
-      return null;
-    }
+    if (placeId.isEmpty) return null;
+    return (await getPlaceDetails(placeId))?['coordinates'] as LatLng?;
+  }
+
+  // Full Place Details fetch: returns geometry + formatted_address
+  Future<Map<String, dynamic>?> getPlaceDetails(String placeId) async {
+    if (placeId.isEmpty) return null;
+
     final queryParams = {
       'place_id': placeId,
-      'fields': 'geometry',
+      'fields': 'geometry,formatted_address,name',
       'key': _apiKey,
     };
     final url = _buildUri('/maps/api/place/details/json', queryParams);
+    debugPrint('[TRIP_DEBUG] Fetching Place Details for placeId: $placeId');
 
     try {
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(const Duration(seconds: 6));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final geometry = data['result']?['geometry'];
-        if (geometry != null) {
-          final lat = (geometry['location']['lat'] as num).toDouble();
-          final lng = (geometry['location']['lng'] as num).toDouble();
-          return LatLng(lat, lng);
+        final status = data['status'] as String? ?? 'UNKNOWN';
+        debugPrint('[TRIP_DEBUG] Place Details API status: $status for placeId: $placeId');
+        final result = data['result'] as Map<String, dynamic>?;
+        if (result != null) {
+          final geometry = result['geometry'] as Map<String, dynamic>?;
+          final location = geometry?['location'] as Map<String, dynamic>?;
+          if (location != null) {
+            final lat = (location['lat'] as num).toDouble();
+            final lng = (location['lng'] as num).toDouble();
+            debugPrint('[TRIP_DEBUG] Place Details resolved: ($lat, $lng)');
+            return {
+              'coordinates': LatLng(lat, lng),
+              'formattedAddress': result['formatted_address'] as String? ?? '',
+              'name': result['name'] as String? ?? '',
+            };
+          }
         }
       }
     } catch (e) {
-      debugPrint("Place Details Coordinates API error: $e");
+      debugPrint('[TRIP_DEBUG] Place Details API error: $e');
     }
     return null;
   }

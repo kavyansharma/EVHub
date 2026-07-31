@@ -752,25 +752,57 @@ class MapsProvider extends ChangeNotifier {
     _discoveryMode = 'route';
     _isLoadingRoute = true;
     _isLoading = true;
+    _markers = [];
     notifyListeners();
+
+    debugPrint('[TRIP_DEBUG] Route API request started');
+    debugPrint('[TRIP_DEBUG] Origin: (${origin.latitude}, ${origin.longitude})');
+    debugPrint('[TRIP_DEBUG] Destination: (${dest.latitude}, ${dest.longitude})');
 
     try {
       final directions = await _mapsService.getDirections(origin, dest);
+      debugPrint('[TRIP_DEBUG] Route API response received: ${directions != null ? "SUCCESS" : "NULL (failed)"}');
+
       if (directions != null) {
         _routePoints = directions['points'] as List<LatLng>;
         _routeDistance = directions['distance'] as String;
         _routeDuration = directions['duration'] as String;
 
+        debugPrint('[TRIP_DEBUG] Route coordinate count: ${_routePoints.length}');
+        debugPrint('[TRIP_DEBUG] Route distance: $_routeDistance');
+        debugPrint('[TRIP_DEBUG] Route duration: $_routeDuration');
+
+        // Adaptive corridor expansion: 5km → 10km → 25km → 50km
+        const corridorSteps = [5.0, 10.0, 25.0, 50.0];
+        List<MapMarkerModel> routeChargers = [];
+        double usedRadius = corridorSteps.first;
+
+        for (final radius in corridorSteps) {
+          usedRadius = radius;
+          debugPrint('[TRIP_DEBUG] Charger search started — corridor radius: ${radius}km');
+          routeChargers = await _hybridChargerRepository.searchRouteCorridorChargers(
+            polylinePoints: _routePoints,
+            corridorRadiusKm: radius,
+          );
+          debugPrint('[TRIP_DEBUG] Chargers found at ${radius}km: ${routeChargers.length}');
+          if (routeChargers.isNotEmpty) break; // Found enough chargers, stop expanding
+        }
+
+        _markers = routeChargers;
+
+        // Also fetch raw Firestore count for diagnostics
         final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
         final validCoordsDocs = rawDocs.where((c) => c.hasValidCoordinates).toList();
 
-        // Fetch route corridor chargers within 10 km corridor of the polyline
-        final routeChargers = await _hybridChargerRepository.searchRouteCorridorChargers(
-          polylinePoints: _routePoints,
-          corridorRadiusKm: 10.0,
+        final accepted = _markers.length;
+        final rejected = validCoordsDocs.length - accepted;
+
+        debugPrint(
+          '[TRIP_DEBUG] Charger search radius: ${usedRadius}km\n'
+          '[TRIP_DEBUG] Chargers found: ${routeChargers.length}\n'
+          '[TRIP_DEBUG] Chargers accepted along route: $accepted\n'
+          '[TRIP_DEBUG] Chargers rejected: $rejected'
         );
-        _markers = routeChargers;
-        final visible = getFilteredMarkers();
 
         debugPrint(
           '[MAP-DIAGNOSTIC]\n'
@@ -780,15 +812,23 @@ class MapsProvider extends ChangeNotifier {
           'Polyline points: ${_routePoints.length}\n'
           'Number of chargers fetched from Firestore: ${rawDocs.length}\n'
           'Number of valid chargers after coordinate validation: ${validCoordsDocs.length}\n'
-          'Number of chargers returned by route corridor filtering (10km): ${_markers.length}\n'
-          'Number of Google Maps Marker objects generated: ${visible.length}',
+          'Number of chargers returned by route corridor filtering (${usedRadius}km): ${_markers.length}\n'
+          'Number of Google Maps Marker objects generated: ${getFilteredMarkers().length}',
         );
 
-        _searchStatusMessage = '${visible.length} chargers found along 10 km route corridor';
+        if (_markers.isNotEmpty) {
+          _searchStatusMessage = '${_markers.length} chargers found along ${usedRadius.toInt()}km route corridor';
+        } else {
+          _searchStatusMessage = 'Route found, but no EV chargers found within ${corridorSteps.last.toInt()}km of route. '
+              'Try a different route or check back later.';
+        }
+      } else {
+        _searchStatusMessage = 'Unable to calculate route. Please check your origin and destination, then try again.';
+        debugPrint('[TRIP_DEBUG] Route API returned null — check API key, CORS proxy, and request coordinates.');
       }
     } catch (e) {
-      debugPrint('[MapsProvider] Route corridor error: $e');
-      _searchStatusMessage = 'Route calculation failed';
+      debugPrint('[TRIP_DEBUG] Route corridor error: $e');
+      _searchStatusMessage = 'Route calculation failed: ${e.toString()}';
     } finally {
       _isLoadingRoute = false;
       _isLoading = false;

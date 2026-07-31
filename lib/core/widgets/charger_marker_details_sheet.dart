@@ -5,7 +5,6 @@ import '../../models/map_marker_model.dart';
 import '../../providers/maps_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/charger_source_badge.dart';
-import '../../services/smart_trip_energy_cost_service.dart';
 import '../../services/smart_charger_ranking_service.dart';
 import '../../services/charging_time_estimator_service.dart';
 import '../../services/navigation_launcher_service.dart';
