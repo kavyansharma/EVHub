@@ -18,6 +18,8 @@ import '../../services/smart_trip_energy_cost_service.dart';
 import '../../services/vehicle_service.dart';
 import '../../models/smart_trip_cost_settings.dart';
 import '../wallet/add_money_screen.dart';
+import 'charger_details_screen.dart';
+import 'in_app_navigation_screen.dart';
 
 // ─── Color palette ──────────────────────────────────────────────────────────
 const Color _kGreen  = Color(0xFF10B981);
@@ -101,6 +103,108 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         subtitle: 'Gateway to South',
         latitude: 13.0827,
         longitude: 80.2707,
+        source: LocationSearchResultSource.localFallback,
+      ),
+    },
+    {
+      'label': 'Delhi → Chandigarh',
+      'origin': LocationSearchResult(
+        displayName: 'New Delhi, Delhi',
+        subtitle: 'Capital Region',
+        latitude: 28.6139,
+        longitude: 77.2090,
+        source: LocationSearchResultSource.localFallback,
+      ),
+      'destination': LocationSearchResult(
+        displayName: 'Chandigarh',
+        subtitle: 'City Beautiful',
+        latitude: 30.7333,
+        longitude: 76.7794,
+        source: LocationSearchResultSource.localFallback,
+      ),
+    },
+    {
+      'label': 'Delhi → Agra',
+      'origin': LocationSearchResult(
+        displayName: 'New Delhi, Delhi',
+        subtitle: 'Capital Region',
+        latitude: 28.6139,
+        longitude: 77.2090,
+        source: LocationSearchResultSource.localFallback,
+      ),
+      'destination': LocationSearchResult(
+        displayName: 'Agra, Uttar Pradesh',
+        subtitle: 'City of Taj',
+        latitude: 27.1767,
+        longitude: 78.0081,
+        source: LocationSearchResultSource.localFallback,
+      ),
+    },
+    {
+      'label': 'Mumbai → Nashik',
+      'origin': LocationSearchResult(
+        displayName: 'Mumbai, Maharashtra',
+        subtitle: 'Financial Capital',
+        latitude: 19.0760,
+        longitude: 72.8777,
+        source: LocationSearchResultSource.localFallback,
+      ),
+      'destination': LocationSearchResult(
+        displayName: 'Nashik, Maharashtra',
+        subtitle: 'Wine Capital',
+        latitude: 19.9975,
+        longitude: 73.7898,
+        source: LocationSearchResultSource.localFallback,
+      ),
+    },
+    {
+      'label': 'Bengaluru → Mysuru',
+      'origin': LocationSearchResult(
+        displayName: 'Bengaluru, Karnataka',
+        subtitle: 'Silicon Valley',
+        latitude: 12.9716,
+        longitude: 77.5946,
+        source: LocationSearchResultSource.localFallback,
+      ),
+      'destination': LocationSearchResult(
+        displayName: 'Mysuru, Karnataka',
+        subtitle: 'Heritage City',
+        latitude: 12.2958,
+        longitude: 76.6394,
+        source: LocationSearchResultSource.localFallback,
+      ),
+    },
+    {
+      'label': 'Chennai → Pondicherry',
+      'origin': LocationSearchResult(
+        displayName: 'Chennai, Tamil Nadu',
+        subtitle: 'Gateway to South',
+        latitude: 13.0827,
+        longitude: 80.2707,
+        source: LocationSearchResultSource.localFallback,
+      ),
+      'destination': LocationSearchResult(
+        displayName: 'Pondicherry',
+        subtitle: 'French Riviera',
+        latitude: 11.9416,
+        longitude: 79.8083,
+        source: LocationSearchResultSource.localFallback,
+      ),
+    },
+    {
+      'label': 'Hyderabad → Bengaluru',
+      'origin': LocationSearchResult(
+        displayName: 'Hyderabad, Telangana',
+        subtitle: 'Pearl City',
+        latitude: 17.3850,
+        longitude: 78.4867,
+        source: LocationSearchResultSource.localFallback,
+      ),
+      'destination': LocationSearchResult(
+        displayName: 'Bengaluru, Karnataka',
+        subtitle: 'Silicon Valley',
+        latitude: 12.9716,
+        longitude: 77.5946,
         source: LocationSearchResultSource.localFallback,
       ),
     },
@@ -1039,6 +1143,60 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
             Expanded(child: Text(stop.reasonLabel,
                 style: GoogleFonts.outfit(color: Colors.white38, fontSize: 11))),
           ]),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    mp.setSelectedMarker(stop.charger);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChargerDetailsScreen(marker: stop.charger),
+                      ),
+                    );
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  icon: const Icon(Icons.info_outline, size: 14, color: _kBlue),
+                  label: Text('View Details', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    if (_selectedOrigin != null && _selectedDestination != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => InAppNavigationScreen(
+                            origin: _selectedOrigin!,
+                            destination: _selectedDestination!,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kGreen.withOpacity(0.2),
+                    foregroundColor: _kGreen,
+                    elevation: 0,
+                    side: BorderSide(color: _kGreen.withOpacity(0.4)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  icon: const Icon(Icons.navigation, size: 14, color: _kGreen),
+                  label: Text('Navigate', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
         ]),
       ),
     );
@@ -1228,6 +1386,27 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
           _buildMetricItem('Chargers', '${chargersList.length}', Icons.ev_station, _kGreen),
           _buildMetricItem('Rec. Stops', '${smartResult?.recommendedStops.length ?? 0}', Icons.pin_drop, _kBlue),
         ]),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: PremiumButton(
+            text: 'START NAVIGATION',
+            icon: Icons.navigation,
+            onPressed: () {
+              if (_selectedOrigin != null && _selectedDestination != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => InAppNavigationScreen(
+                      origin: _selectedOrigin!,
+                      destination: _selectedDestination!,
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+        ),
       ]),
     );
   }
