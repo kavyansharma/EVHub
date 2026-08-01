@@ -832,8 +832,8 @@ class MapsProvider extends ChangeNotifier {
               'Try a different route or check back later.';
         }
       } else {
-        _searchStatusMessage = 'Unable to calculate route. Please check your origin and destination, then try again.';
-        debugPrint('[TRIP_DEBUG] Route API returned null — check API key, CORS proxy, and request coordinates.');
+        _searchStatusMessage = 'Unable to calculate a driving route right now. Please try again or open the destination in Google Maps.';
+        debugPrint('[TRIP_DEBUG] Route API returned null — both Google Directions and OSRM failed.');
       }
     } catch (e) {
       debugPrint('[TRIP_DEBUG] Route corridor error: $e');

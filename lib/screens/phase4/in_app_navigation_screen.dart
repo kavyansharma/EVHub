@@ -314,7 +314,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                     ),
                   ],
 
-                  // Route calculation failure banner with Retry
+                  // Route calculation failure banner with Retry & Google Maps options
                   if (mp.routePoints.isEmpty && !mp.isLoadingRoute && !mp.isLoading) ...[
                     const SizedBox(height: 10),
                     Container(
@@ -324,37 +324,65 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 16),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Unable to calculate route.',
-                              style: GoogleFonts.outfit(
-                                color: Colors.redAccent,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                          Row(
+                            children: [
+                              const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Unable to calculate a driving route right now. Please try again or open the destination in Google Maps.',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.redAccent,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            onPressed: () {
-                              mp.planTrip(origin: widget.origin, destination: widget.destination);
-                            },
-                            child: Text(
-                              'Retry Route',
-                              style: GoogleFonts.outfit(
-                                color: const Color(0xFF10B981),
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () {
+                                  mp.planTrip(origin: widget.origin, destination: widget.destination);
+                                },
+                                child: Text(
+                                  'Retry Route',
+                                  style: GoogleFonts.outfit(
+                                    color: const Color(0xFF10B981),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: _launchExternalGoogleMaps,
+                                child: Text(
+                                  'Open in Google Maps',
+                                  style: GoogleFonts.outfit(
+                                    color: const Color(0xFF3B82F6),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),

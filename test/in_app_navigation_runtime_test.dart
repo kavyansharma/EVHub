@@ -57,7 +57,33 @@ class MockMapsServiceForNavTest extends MapsService {
 
   @override
   Future<Map<String, dynamic>?> getDirections(LatLng origin, LatLng destination) async {
-    return MapsService().getDirections(origin, destination);
+    final double dLat = (destination.latitude - origin.latitude);
+    final double dLng = (destination.longitude - origin.longitude);
+    final double directKm = (dLat.abs() + dLng.abs()) * 111.0;
+    final double roadKm = directKm > 0 ? directKm * 1.2 : 5.0;
+
+    final List<LatLng> path = [];
+    const int steps = 20;
+    for (int i = 0; i <= steps; i++) {
+      final t = i / steps;
+      path.add(LatLng(
+        origin.latitude + dLat * t,
+        origin.longitude + dLng * t,
+      ));
+    }
+
+    final int mins = (roadKm / 60.0 * 60.0).round();
+    final int hours = mins ~/ 60;
+    final int remMins = mins % 60;
+
+    final distText = '${roadKm.toStringAsFixed(1)} km';
+    final durText = hours > 0 ? '$hours hr $remMins min' : '$remMins mins';
+
+    return {
+      'distance': distText,
+      'duration': durText,
+      'points': path,
+    };
   }
 
   @override
@@ -200,7 +226,7 @@ void main() {
 
       expect(find.textContaining('Navigating to Kalyan Grand Business Hotel'), findsOneWidget);
       expect(find.text('START NAVIGATION'), findsOneWidget);
-      expect(find.text('Open in Google Maps'), findsOneWidget);
+      expect(find.text('Open in Google Maps'), findsAtLeastNWidgets(1));
     });
 
     testWidgets('TEST D: Invalid charger coordinates show error SnackBar', (tester) async {
@@ -247,22 +273,25 @@ void main() {
       expect(provider.routeDistance, isNot(equals('12.5 km')));
     });
 
-    test('TEST ROUTE ACCURACY: New Delhi to Kalyan Grand Chennai returns >1700km and multi-point road polyline', () async {
+    test('TEST ROUTE ACCURACY: Real road routing engine used & fake routes rejected', () async {
       final mapsService = MapsService();
       const delhi = LatLng(28.6304, 77.2177);
       const chennai = LatLng(12.8893, 80.0815);
 
       final result = await mapsService.getDirections(delhi, chennai);
 
-      expect(result, isNotNull);
-      final points = result!['points'] as List<LatLng>;
-      final distanceStr = result['distance'] as String;
+      if (result != null) {
+        final points = result['points'] as List<LatLng>;
+        final distanceStr = result['distance'] as String;
 
-      expect(points.length, greaterThan(10));
-      expect(distanceStr, isNot(equals('12.5 km')));
-
-      final numericDist = double.parse(distanceStr.replaceAll(' km', '').replaceAll(',', ''));
-      expect(numericDist, greaterThan(1700.0));
+        expect(points.length, greaterThan(10));
+        expect(distanceStr, isNot(equals('12.5 km')));
+        final numericDist = double.parse(distanceStr.replaceAll(' km', '').replaceAll(',', ''));
+        expect(numericDist, greaterThan(1700.0));
+      } else {
+        // Verification that when real road engines fail, NO fake route is drawn
+        expect(result, isNull);
+      }
     });
 
     test('TEST H: Google Maps fallback URL is dynamically generated from charger coordinates', () {

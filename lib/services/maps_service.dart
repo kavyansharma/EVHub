@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -325,9 +324,8 @@ class MapsService {
       return osrmResult;
     }
 
-    // Fallback 2: Mathematical Haversine Multi-Point Road Route Generator
-    debugPrint('[EVHUB_NAV] Generating Haversine multi-point road route fallback...');
-    return _generateHaversineFallbackRoute(origin, dest);
+    debugPrint('[EVHUB_NAV] Both Google Directions and OSRM public route services failed. No fake route generated.');
+    return null;
   }
 
   Future<Map<String, dynamic>?> _getOSRMDirections(LatLng origin, LatLng dest) async {
@@ -376,62 +374,6 @@ class MapsService {
     }
     return null;
   }
-
-  Map<String, dynamic> _generateHaversineFallbackRoute(LatLng origin, LatLng dest) {
-    final double directKm = _calculateHaversineDistanceKm(
-      origin.latitude,
-      origin.longitude,
-      dest.latitude,
-      dest.longitude,
-    );
-
-    // Apply 1.2x road curvature factor
-    final double roadKm = directKm * 1.2;
-
-    // Generate 50 curved intermediate waypoints
-    final List<LatLng> path = [];
-    const int stepCount = 50;
-
-    for (int i = 0; i <= stepCount; i++) {
-      final t = i / stepCount;
-      final lat = origin.latitude + (dest.latitude - origin.latitude) * t;
-      final lng = origin.longitude + (dest.longitude - origin.longitude) * t;
-
-      // Parabolic lateral offset for realistic curve
-      final offset = math.sin(t * math.pi) * 0.05;
-      path.add(LatLng(lat + offset, lng - offset));
-    }
-
-    final int totalMins = (roadKm / 65.0 * 60.0).round();
-    final int hours = totalMins ~/ 60;
-    final int mins = totalMins % 60;
-
-    final distText = '${roadKm.toStringAsFixed(1)} km';
-    final durText = hours > 0 ? '$hours hr $mins min' : '$mins mins';
-
-    debugPrint('[EVHUB_NAV] Haversine fallback route calculated: $distText, $durText, points: ${path.length}');
-
-    return {
-      'distance': distText,
-      'duration': durText,
-      'points': path,
-    };
-  }
-
-  double _calculateHaversineDistanceKm(double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadiusKm = 6371.0;
-    final double dLat = _toRadians(lat2 - lat1);
-    final double dLon = _toRadians(lon2 - lon1);
-
-    final double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_toRadians(lat1)) * math.cos(_toRadians(lat2)) *
-        math.sin(dLon / 2) * math.sin(dLon / 2);
-
-    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-    return earthRadiusKm * c;
-  }
-
-  double _toRadians(double degree) => degree * math.pi / 180.0;
 
   // 4. Live GPS with Geolocator
   Future<LocationPermission> checkLocationPermission() async {
