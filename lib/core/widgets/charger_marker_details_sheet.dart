@@ -3,14 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/map_marker_model.dart';
-import '../../models/location_search_result.dart';
 import '../../providers/maps_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/charger_source_badge.dart';
 import '../../services/smart_charger_ranking_service.dart';
 import '../../services/charging_time_estimator_service.dart';
+import '../../services/navigation_launcher_service.dart';
 import '../../screens/phase4/charger_details_screen.dart';
-import '../../screens/phase4/in_app_navigation_screen.dart';
 
 /// Synchronous Charger Details Bottom Sheet.
 /// Immediately renders complete charger details from the in-memory [charger] object
@@ -33,30 +32,36 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
   }
 
   void _onNavigatePressed(BuildContext context) {
-    debugPrint('[EVHUB_NAV] NAVIGATE BUTTON PRESSED');
-    debugPrint('[EVHUB_NAV] Charger: ${charger.name}');
-    debugPrint('[EVHUB_NAV] Charger ID: ${charger.id}');
-    debugPrint('[EVHUB_NAV] Destination Lat: ${charger.latitude}');
-    debugPrint('[EVHUB_NAV] Destination Lng: ${charger.longitude}');
+    final lat = charger.latitude;
+    final lng = charger.longitude;
+    final name = charger.name;
+    final id = charger.id;
 
-    final isLatValid = charger.latitude != 0.0 && charger.latitude >= -90.0 && charger.latitude <= 90.0;
-    final isLngValid = charger.longitude != 0.0 && charger.longitude >= -180.0 && charger.longitude <= 180.0;
+    debugPrint('[EVHUB_NAV] NAVIGATE BUTTON PRESSED');
+    debugPrint('[EVHUB_NAV] Charger Name: $name');
+    debugPrint('[EVHUB_NAV] Charger ID: $id');
+    debugPrint('[EVHUB_NAV] Destination Latitude: $lat');
+    debugPrint('[EVHUB_NAV] Destination Longitude: $lng');
+
+    final isLatValid = !lat.isNaN && lat != 0.0 && lat >= -90.0 && lat <= 90.0;
+    final isLngValid = !lng.isNaN && lng != 0.0 && lng >= -180.0 && lng <= 180.0;
+
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final address = charger.displayAddress.trim();
 
     if (!charger.hasValidCoordinates || !isLatValid || !isLngValid) {
-      debugPrint('[EVHUB_NAV_ERROR] Invalid coordinates for charger: lat=${charger.latitude}, lng=${charger.longitude}');
-      final scaffold = ScaffoldMessenger.of(context);
-      final address = charger.displayAddress.trim();
-      scaffold.showSnackBar(
+      debugPrint('[EVHUB_NAV_ERROR] Navigation unavailable due to missing/invalid coordinates for charger: lat=$lat, lng=$lng');
+      scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Charger coordinates are unavailable.',
+            "Navigation is unavailable because this charger's location coordinates are missing.",
             style: GoogleFonts.outfit(color: Colors.white),
           ),
           backgroundColor: const Color(0xFF1A1D2E),
           behavior: SnackBarBehavior.floating,
           action: address.isNotEmpty
               ? SnackBarAction(
-                  label: 'Open Address in Google Maps',
+                  label: 'OPEN ADDRESS IN GOOGLE MAPS',
                   textColor: const Color(0xFF3B82F6),
                   onPressed: () async {
                     final query = Uri.encodeComponent(address);
@@ -66,7 +71,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                         await launchUrl(url, mode: LaunchMode.externalApplication);
                       }
                     } catch (e) {
-                      debugPrint('[EVHUB_NAV_ERROR] External search error: $e');
+                      debugPrint('[EVHUB_NAV_ERROR] External address search error: $e');
                     }
                   },
                 )
@@ -76,58 +81,29 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       return;
     }
 
-    final mapsProvider = context.read<MapsProvider>();
-
-    LocationSearchResult origin;
-    if (mapsProvider.hasLocationPermission && mapsProvider.currentLocation != null) {
-      origin = LocationSearchResult(
-        displayName: 'Current Location',
-        subtitle: 'Live GPS Position',
-        latitude: mapsProvider.currentLocation!['latitude']!,
-        longitude: mapsProvider.currentLocation!['longitude']!,
-        source: LocationSearchResultSource.localFallback,
-      );
-    } else {
-      final fallbackLat = mapsProvider.currentLocation?['latitude'] ?? 28.6304;
-      final fallbackLng = mapsProvider.currentLocation?['longitude'] ?? 77.2177;
-      origin = LocationSearchResult(
-        displayName: 'Current Map Location',
-        subtitle: 'Live location is unavailable',
-        latitude: fallbackLat,
-        longitude: fallbackLng,
-        source: LocationSearchResultSource.localFallback,
-      );
-    }
-
-    debugPrint('[EVHUB_NAV] Origin Lat: ${origin.latitude}');
-    debugPrint('[EVHUB_NAV] Origin Lng: ${origin.longitude}');
-
-    final destination = LocationSearchResult(
-      displayName: charger.name,
-      subtitle: charger.displayAddress,
-      latitude: charger.latitude,
-      longitude: charger.longitude,
-      source: LocationSearchResultSource.localFallback,
-    );
-
-    // CRITICAL FIX: Capture NavigatorState BEFORE popping modal bottom sheet!
+    // Safely capture root navigator before closing bottom sheet
     final navigator = Navigator.of(context, rootNavigator: true);
 
-    debugPrint('[EVHUB_NAV] Closing Charger Details Bottom Sheet');
+    debugPrint('[EVHUB_NAV] Closing Charger Details Sheet');
     navigator.pop();
 
-    debugPrint('[EVHUB_NAV] Opening InAppNavigationScreen');
-    mapsProvider.planTrip(origin: origin, destination: destination);
-
-    navigator.push(
-      MaterialPageRoute(
-        builder: (_) => InAppNavigationScreen(
-          origin: origin,
-          destination: destination,
-        ),
-      ),
-    ).catchError((e, stack) {
-      debugPrint('[EVHUB_NAV_ERROR] Error pushing InAppNavigationScreen: $e\n$stack');
+    NavigationLauncherService().launchNavigation(
+      lat,
+      lng,
+      destinationName: name,
+    ).then((success) {
+      if (!success) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to open Google Maps. Please try again.',
+              style: GoogleFonts.outfit(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFF1A1D2E),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     });
   }
 

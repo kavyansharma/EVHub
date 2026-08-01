@@ -248,7 +248,7 @@ class MapsProvider extends ChangeNotifier {
   }
 
   Future<bool> launchExternalNavigation(MapMarkerModel charger) async {
-    return _navigationService.launchNavigation(charger.latitude, charger.longitude);
+    return _navigationService.launchNavigation(charger.latitude, charger.longitude, destinationName: charger.name);
   }
 
   int get estimatedBatteryUsage {

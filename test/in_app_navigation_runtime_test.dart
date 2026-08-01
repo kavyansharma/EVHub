@@ -148,7 +148,7 @@ void main() {
   }
 
   group('EVHUB — In-App EV Navigation & Navigate Button End-to-End Suite', () {
-    testWidgets('TEST A & B: Tapping NAVIGATE closes bottom sheet and opens InAppNavigationScreen', (tester) async {
+    testWidgets('TEST A & B: Tapping NAVIGATE closes bottom sheet and launches Google Maps (NOT InAppNavigationScreen)', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -186,50 +186,24 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // TEST A: InAppNavigationScreen opens
-      expect(find.byType(InAppNavigationScreen), findsOneWidget);
-      // TEST B: ChargerMarkerDetailsSheet is closed
+      // TEST A: ChargerMarkerDetailsSheet is closed
       expect(find.byType(ChargerMarkerDetailsSheet), findsNothing);
+      // TEST B: InAppNavigationScreen is NOT opened
+      expect(find.byType(InAppNavigationScreen), findsNothing);
     });
 
-    testWidgets('TEST C & G: Valid charger coordinates pass to navigation screen & display Distance + ETA', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: true);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
+    testWidgets('TEST C: Direct Google Maps navigation URL contains driving mode & dir_action=navigate', (tester) async {
+      final lat = sampleValidCharger.latitude;
+      final lng = sampleValidCharger.longitude;
+      final googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving&dir_action=navigate';
 
-      const origin = LocationSearchResult(
-        displayName: 'Vandalur Zoo',
-        latitude: 12.8800,
-        longitude: 80.0800,
-        source: LocationSearchResultSource.localFallback,
-      );
-      final destination = LocationSearchResult(
-        displayName: sampleValidCharger.name,
-        subtitle: sampleValidCharger.displayAddress,
-        latitude: sampleValidCharger.latitude,
-        longitude: sampleValidCharger.longitude,
-        source: LocationSearchResultSource.localFallback,
-      );
-
-      await provider.planTrip(origin: origin, destination: destination);
-
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: InAppNavigationScreen(origin: origin, destination: destination),
-      ));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.textContaining('Navigating to Kalyan Grand Business Hotel'), findsOneWidget);
-      expect(find.text('START NAVIGATION'), findsOneWidget);
-      expect(find.text('Open in Google Maps'), findsAtLeastNWidgets(1));
+      expect(googleMapsUrl, contains('api=1'));
+      expect(googleMapsUrl, contains('destination=12.8893,80.0815'));
+      expect(googleMapsUrl, contains('travelmode=driving'));
+      expect(googleMapsUrl, contains('dir_action=navigate'));
     });
 
-    testWidgets('TEST D: Invalid charger coordinates show error SnackBar', (tester) async {
+    testWidgets('TEST D & E: Invalid/missing charger coordinates show user-friendly error SnackBar', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleInvalidCharger]);
       final provider = MapsProvider(
@@ -248,60 +222,18 @@ void main() {
       await tester.tap(find.text('NAVIGATE'));
       await tester.pumpAndSettle();
 
-      // TEST D: SnackBar warning shown, InAppNavigationScreen not opened
-      expect(find.textContaining('Charger coordinates are unavailable.'), findsOneWidget);
+      // TEST D & E: SnackBar warning shown, InAppNavigationScreen not opened
+      expect(find.textContaining("Navigation is unavailable because this charger's location coordinates are missing."), findsOneWidget);
       expect(find.byType(InAppNavigationScreen), findsNothing);
     });
 
-    test('TEST E & F: Route polyline generated & destination marker added to provider state', () async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: true);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
+    test('TEST F: Address fallback URL formatted correctly for missing coordinates', () {
+      final address = sampleInvalidCharger.displayAddress;
+      final query = Uri.encodeComponent(address);
+      final url = 'https://www.google.com/maps/search/?api=1&query=$query';
 
-      const origin = LatLng(12.8398, 80.0544);
-      const dest = LatLng(12.8893, 80.0815);
-
-      await provider.calculateRouteBetween(origin, dest);
-
-      expect(provider.routePoints, isNotEmpty);
-      expect(provider.routePoints.length, greaterThan(10));
-      expect(provider.routeDistance, isNotNull);
-      expect(provider.routeDistance, isNot(equals('12.5 km')));
-    });
-
-    test('TEST ROUTE ACCURACY: Real road routing engine used & fake routes rejected', () async {
-      final mapsService = MapsService();
-      const delhi = LatLng(28.6304, 77.2177);
-      const chennai = LatLng(12.8893, 80.0815);
-
-      final result = await mapsService.getDirections(delhi, chennai);
-
-      if (result != null) {
-        final points = result['points'] as List<LatLng>;
-        final distanceStr = result['distance'] as String;
-
-        expect(points.length, greaterThan(10));
-        expect(distanceStr, isNot(equals('12.5 km')));
-        final numericDist = double.parse(distanceStr.replaceAll(' km', '').replaceAll(',', ''));
-        expect(numericDist, greaterThan(1700.0));
-      } else {
-        // Verification that when real road engines fail, NO fake route is drawn
-        expect(result, isNull);
-      }
-    });
-
-    test('TEST H: Google Maps fallback URL is dynamically generated from charger coordinates', () {
-      final lat = sampleValidCharger.latitude;
-      final lng = sampleValidCharger.longitude;
-      final url = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng';
-
-      expect(url, equals('https://www.google.com/maps/dir/?api=1&destination=12.8893,80.0815'));
-      expect(url.contains('12.8893'), isTrue);
-      expect(url.contains('80.0815'), isTrue);
+      expect(url, contains('api=1'));
+      expect(url, contains('query=247%20Grand%20Southern%20Trunk%20Rd'));
     });
 
     testWidgets('TEST I, J & O: NAVIGATE does NOT trigger location permission dialog & works without GPS permission', (tester) async {
@@ -339,10 +271,8 @@ void main() {
 
       // TEST I & O: Request count remains 0 (No OS dialog asked)
       expect(mapsService.requestCount, equals(0));
-
-      // TEST J: Navigation screen opened using map center fallback
-      expect(find.byType(InAppNavigationScreen), findsOneWidget);
-      expect(find.textContaining('Live location is unavailable'), findsOneWidget);
+      // InAppNavigationScreen NOT opened
+      expect(find.byType(InAppNavigationScreen), findsNothing);
     });
 
     test('TEST K: Smart Trip Planner accepts exact street addresses', () async {

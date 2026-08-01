@@ -129,7 +129,7 @@ void main() {
       expect(find.text('Price unavailable'), findsOneWidget);
     });
 
-    testWidgets('E. Navigate button works', (WidgetTester tester) async {
+    testWidgets('E. Navigate button works and launches external Google Maps directly', (WidgetTester tester) async {
       await tester.pumpWidget(
         ChangeNotifierProvider<MapsProvider>.value(
           value: mapsProvider,
@@ -150,7 +150,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.byType(InAppNavigationScreen), findsOneWidget);
+      expect(find.byType(InAppNavigationScreen), findsNothing);
     });
 
     testWidgets('F. Start charging button works', (WidgetTester tester) async {
