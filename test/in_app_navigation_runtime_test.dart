@@ -57,12 +57,7 @@ class MockMapsServiceForNavTest extends MapsService {
 
   @override
   Future<Map<String, dynamic>?> getDirections(LatLng origin, LatLng destination) async {
-    return {
-      'points': [origin, destination],
-      'distance': '12.5 km',
-      'duration': '22 mins',
-      'polyline': 'encoded_polyline_sample',
-    };
+    return MapsService().getDirections(origin, destination);
   }
 
   @override
@@ -247,8 +242,27 @@ void main() {
       await provider.calculateRouteBetween(origin, dest);
 
       expect(provider.routePoints, isNotEmpty);
-      expect(provider.routeDistance, equals('12.5 km'));
-      expect(provider.routeDuration, equals('22 mins'));
+      expect(provider.routePoints.length, greaterThan(10));
+      expect(provider.routeDistance, isNotNull);
+      expect(provider.routeDistance, isNot(equals('12.5 km')));
+    });
+
+    test('TEST ROUTE ACCURACY: New Delhi to Kalyan Grand Chennai returns >1700km and multi-point road polyline', () async {
+      final mapsService = MapsService();
+      const delhi = LatLng(28.6304, 77.2177);
+      const chennai = LatLng(12.8893, 80.0815);
+
+      final result = await mapsService.getDirections(delhi, chennai);
+
+      expect(result, isNotNull);
+      final points = result!['points'] as List<LatLng>;
+      final distanceStr = result['distance'] as String;
+
+      expect(points.length, greaterThan(10));
+      expect(distanceStr, isNot(equals('12.5 km')));
+
+      final numericDist = double.parse(distanceStr.replaceAll(' km', '').replaceAll(',', ''));
+      expect(numericDist, greaterThan(1700.0));
     });
 
     test('TEST H: Google Maps fallback URL is dynamically generated from charger coordinates', () {
