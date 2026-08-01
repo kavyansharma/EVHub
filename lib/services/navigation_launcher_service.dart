@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'url_launcher_helper.dart';
 
 /// Helper service for launching external GPS navigation (e.g. Google Maps)
 /// directly using charger coordinates.
@@ -18,15 +19,12 @@ class NavigationLauncherService {
     final String googleMapsUrl =
         'https://www.google.com/maps/dir/?api=1&destination=$latitude,$longitude&travelmode=driving&dir_action=navigate';
 
-    debugPrint('[EVHUB_NAV] ========================================');
-    debugPrint('[EVHUB_NAV] NAVIGATE BUTTON CLICKED');
-    debugPrint('[EVHUB_NAV] Charger Name: ${destinationName ?? "Charger"}');
-    debugPrint('[EVHUB_NAV] Charger ID: ${destinationId ?? "N/A"}');
-    debugPrint('[EVHUB_NAV] Latitude: $latitude');
-    debugPrint('[EVHUB_NAV] Longitude: $longitude');
-    debugPrint('[EVHUB_NAV] Building Google Maps URL');
-    debugPrint('[EVHUB_NAV] URL: $googleMapsUrl');
-    debugPrint('[EVHUB_NAV] Calling launchUrl directly from user click');
+    debugPrint('[EVHUB_NAV_DEBUG] ========================================');
+    debugPrint('[EVHUB_NAV_DEBUG] BUTTON CALLBACK ENTERED');
+    debugPrint('[EVHUB_NAV_DEBUG] Charger Name: ${destinationName ?? "Charger"}');
+    debugPrint('[EVHUB_NAV_DEBUG] Charger ID: ${destinationId ?? "N/A"}');
+    debugPrint('[EVHUB_NAV_DEBUG] Latitude: $latitude');
+    debugPrint('[EVHUB_NAV_DEBUG] Longitude: $longitude');
 
     if (latitude.isNaN ||
         longitude.isNaN ||
@@ -36,29 +34,45 @@ class NavigationLauncherService {
         latitude > 90.0 ||
         longitude < -180.0 ||
         longitude > 180.0) {
-      debugPrint('[EVHUB_NAV_ERROR] Invalid navigation coordinates: ($latitude, $longitude)');
-      debugPrint('[EVHUB_NAV] ========================================');
+      debugPrint('[EVHUB_NAV_DEBUG] INVALID COORDINATES');
+      debugPrint('[EVHUB_NAV_DEBUG] ========================================');
       return false;
+    }
+
+    debugPrint('[EVHUB_NAV_DEBUG] VALID COORDINATES');
+    debugPrint('[EVHUB_NAV_DEBUG] GOOGLE MAPS URL: $googleMapsUrl');
+    debugPrint('[EVHUB_NAV_DEBUG] ATTEMPTING WEB LAUNCH');
+
+    bool launched = false;
+
+    // Platform-specific web window launch (synchronous via dart:html on Flutter Web)
+    if (kIsWeb) {
+      launched = openWebWindow(googleMapsUrl);
+      if (launched) {
+        debugPrint('[EVHUB_NAV_DEBUG] WEB LAUNCH RESULT: SUCCESS (openWebWindow)');
+        debugPrint('[EVHUB_NAV_DEBUG] ========================================');
+        return true;
+      }
     }
 
     final Uri uri = Uri.parse(googleMapsUrl);
 
     try {
-      final bool launched = await launchUrl(
+      launched = await launchUrl(
         uri,
         mode: LaunchMode.externalApplication,
         webOnlyWindowName: '_blank',
       );
       if (!launched) {
-        debugPrint('[EVHUB_NAV] LAUNCH FAILED: launchUrl returned false');
+        debugPrint('[EVHUB_NAV_DEBUG] WEB LAUNCH RESULT: FAILED (launchUrl returned false)');
       } else {
-        debugPrint('[EVHUB_NAV] Launch result: true');
+        debugPrint('[EVHUB_NAV_DEBUG] WEB LAUNCH RESULT: SUCCESS');
       }
-      debugPrint('[EVHUB_NAV] ========================================');
+      debugPrint('[EVHUB_NAV_DEBUG] ========================================');
       return launched;
     } catch (e) {
-      debugPrint('[EVHUB_NAV] LAUNCH EXCEPTION: $e');
-      debugPrint('[EVHUB_NAV] ========================================');
+      debugPrint('[EVHUB_NAV_DEBUG] LAUNCH EXCEPTION: $e');
+      debugPrint('[EVHUB_NAV_DEBUG] ========================================');
       return false;
     }
   }

@@ -32,16 +32,22 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
   }
 
   void _onNavigatePressed(BuildContext context) {
+    debugPrint('[EVHUB_NAV_DEBUG] BUTTON CALLBACK ENTERED');
     final lat = charger.latitude;
     final lng = charger.longitude;
     final name = charger.name;
     final id = charger.id;
 
-    final isLatValid = !lat.isNaN && lat != 0.0 && lat >= -90.0 && lat <= 90.0;
-    final isLngValid = !lng.isNaN && lng != 0.0 && lng >= -180.0 && lng <= 180.0;
+    debugPrint('[EVHUB_NAV_DEBUG] Charger Name: $name');
+    debugPrint('[EVHUB_NAV_DEBUG] Charger ID: $id');
+    debugPrint('[EVHUB_NAV_DEBUG] Latitude: $lat');
+    debugPrint('[EVHUB_NAV_DEBUG] Longitude: $lng');
 
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final address = charger.displayAddress.trim();
+
+    final isLatValid = !lat.isNaN && lat != 0.0 && lat >= -90.0 && lat <= 90.0;
+    final isLngValid = !lng.isNaN && lng != 0.0 && lng >= -180.0 && lng <= 180.0;
 
     if (!charger.hasValidCoordinates || !isLatValid || !isLngValid) {
       debugPrint('[EVHUB_NAV_ERROR] Invalid navigation coordinates for charger: lat=$lat, lng=$lng');
@@ -75,6 +81,19 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       return;
     }
 
+    // STEP 7: Show visible runtime debug state SnackBar for valid navigation launch
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Opening Google Maps navigation...',
+          style: GoogleFonts.outfit(color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF10B981),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
     // Safely capture root navigator before popping bottom sheet
     final navigator = Navigator.of(context, rootNavigator: true);
 
@@ -99,7 +118,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       }
     });
 
-    // Close bottom sheet
+    debugPrint('[EVHUB_NAV_DEBUG] BOTTOM SHEET CLOSE REQUESTED');
     navigator.pop();
   }
 
