@@ -69,21 +69,21 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
   }
 
   Future<void> _launchExternalGoogleMaps() async {
-    final originQuery = '${widget.origin.latitude},${widget.origin.longitude}';
-    final destQuery = '${widget.destination.latitude},${widget.destination.longitude}';
+    final destLat = widget.destination.latitude;
+    final destLng = widget.destination.longitude;
     final url = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&origin=$originQuery&destination=$destQuery&travelmode=driving',
+      'https://www.google.com/maps/dir/?api=1&destination=$destLat,$destLng',
     );
 
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
-        _showSnackbar('Could not open external Google Maps.');
+        _showSnackbar('Unable to open Google Maps.');
       }
     } catch (e) {
       debugPrint('[InAppNavigationScreen] Error launching Google Maps: $e');
-      _showSnackbar('Could not open Google Maps.');
+      _showSnackbar('Unable to open Google Maps.');
     }
   }
 
@@ -116,7 +116,10 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       Marker(
         markerId: const MarkerId('nav_destination'),
         position: LatLng(widget.destination.latitude, widget.destination.longitude),
-        infoWindow: InfoWindow(title: 'Destination: ${widget.destination.displayName}'),
+        infoWindow: InfoWindow(
+          title: 'Navigating to: ${widget.destination.displayName}',
+          snippet: widget.destination.subtitle ?? 'Destination',
+        ),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       ),
     );
@@ -165,6 +168,9 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       );
     }
 
+    final distanceDisplay = mp.routeDistance ?? '${smartResult?.tripDistanceKm.toStringAsFixed(1) ?? "0"} km';
+    final durationDisplay = mp.routeDuration ?? 'Route Preview';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -187,93 +193,159 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
             ),
           ),
 
-          // 2. TOP NAVIGATION BAR HUD
+          // 2. TOP NAVIGATION HUD CARD
           Positioned(
             top: 40, left: 16, right: 16,
             child: GlassContainer(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               borderRadius: 20,
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF10B981).withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'EVHUB NAVIGATION',
-                                style: GoogleFonts.outfit(
-                                  color: const Color(0xFF10B981),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.0,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${widget.origin.displayName.split(',').first} → ${widget.destination.displayName.split(',').first}',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (!mp.hasLocationPermission)
-                    GestureDetector(
-                      onTap: () {
-                        mp.requestUserLocationAccess();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.amber.withOpacity(0.4)),
-                        ),
-                        child: Row(
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.gps_fixed, color: Colors.amber, size: 14),
-                            const SizedBox(width: 4),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'ROUTE PREVIEW',
+                                    style: GoogleFonts.outfit(
+                                      color: const Color(0xFF10B981),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
                             Text(
-                              'GPS',
+                              'Navigating to ${widget.destination.displayName}',
+                              style: GoogleFonts.outfit(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (widget.destination.subtitle != null && widget.destination.subtitle!.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.destination.subtitle!,
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Location warning banner when GPS is off (NO automatic permission request)
+                  if (!mp.hasLocationPermission) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.location_off_outlined, color: Colors.amber, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Live location is unavailable.',
                               style: GoogleFonts.outfit(
                                 color: Colors.amber,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () {
+                              _fitMapBounds();
+                            },
+                            child: Text(
+                              'Use Current Map Location',
+                              style: GoogleFonts.outfit(
+                                color: const Color(0xFF3B82F6),
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
           ),
 
-          // 3. BOTTOM NAVIGATION CONTROL CONSOLE HUD
+          // 3. RIGHT FLOATING CONTROLS (Recenter & Zoom)
+          Positioned(
+            right: 16,
+            top: 220,
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'nav_recenter',
+                  backgroundColor: const Color(0xFF1A1D2E),
+                  onPressed: _fitMapBounds,
+                  child: const Icon(Icons.my_location, color: Colors.white, size: 18),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'nav_zoom_in',
+                  backgroundColor: const Color(0xFF1A1D2E),
+                  onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
+                  child: const Icon(Icons.add, color: Colors.white, size: 18),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'nav_zoom_out',
+                  backgroundColor: const Color(0xFF1A1D2E),
+                  onPressed: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
+                  child: const Icon(Icons.remove, color: Colors.white, size: 18),
+                ),
+              ],
+            ),
+          ),
+
+          // 4. BOTTOM NAVIGATION CONTROL CONSOLE HUD
           Positioned(
             left: 16, right: 16, bottom: 24,
             child: GlassContainer(
@@ -289,13 +361,13 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                     children: [
                       _buildNavMetric(
                         label: 'Distance',
-                        value: mp.routeDistance ?? '${smartResult?.tripDistanceKm.toStringAsFixed(0) ?? 0} km',
+                        value: distanceDisplay,
                         icon: Icons.straighten,
                         color: const Color(0xFF3B82F6),
                       ),
                       _buildNavMetric(
-                        label: 'Drive Time',
-                        value: mp.routeDuration ?? '—',
+                        label: 'ETA / Time',
+                        value: durationDisplay,
                         icon: Icons.schedule,
                         color: const Color(0xFFF59E0B),
                       ),
@@ -366,7 +438,32 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
 
                   const SizedBox(height: 18),
 
-                  // Action Buttons
+                  // Primary START NAVIGATION & Secondary Open in Google Maps
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _showSnackbar('In-app navigation guidance active.');
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      icon: const Icon(Icons.navigation, color: Colors.black, size: 20),
+                      label: Text(
+                        'START NAVIGATION',
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
                   Row(
                     children: [
                       Expanded(
@@ -376,9 +473,9 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             foregroundColor: Colors.white,
                             side: const BorderSide(color: Colors.white24),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
-                          icon: const Icon(Icons.open_in_new, size: 18, color: Color(0xFF3B82F6)),
+                          icon: const Icon(Icons.open_in_new, size: 16, color: Color(0xFF3B82F6)),
                           label: Text(
                             'Open in Google Maps',
                             style: GoogleFonts.outfit(
@@ -397,7 +494,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                           elevation: 0,
                           side: const BorderSide(color: Colors.redAccent),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         ),
                         child: Text(
                           'End',

@@ -20,6 +20,7 @@ import '../../models/smart_trip_cost_settings.dart';
 import '../wallet/add_money_screen.dart';
 import 'charger_details_screen.dart';
 import 'in_app_navigation_screen.dart';
+import '../../core/widgets/charger_marker_details_sheet.dart';
 
 // ─── Color palette ──────────────────────────────────────────────────────────
 const Color _kGreen  = Color(0xFF10B981);
@@ -434,23 +435,64 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _startFocusNode.unfocus();
     _endFocusNode.unfocus();
 
-    if (_selectedOrigin == null || _startController.text.trim().isEmpty) {
-      _showSnackbar('Please select a starting location from the suggestions.', isError: true);
+    final startText = _startController.text.trim();
+    final endText   = _endController.text.trim();
+
+    if (startText.isEmpty) {
+      _showSnackbar('Please enter a starting location.', isError: true);
       return;
     }
-    if (_selectedDestination == null || _endController.text.trim().isEmpty) {
-      _showSnackbar('Please select a destination from the suggestions.', isError: true);
+    if (endText.isEmpty) {
+      _showSnackbar('Please enter a destination.', isError: true);
       return;
     }
-    // If the user typed but didn't select a suggestion, try to resolve now
-    if (_selectedOrigin!.latitude == 0.0 && _selectedOrigin!.longitude == 0.0) {
-      _showSnackbar('Please wait — resolving origin location...', isError: false);
-      return;
+
+    // Geocode origin if unselected or missing coordinates
+    if (_selectedOrigin == null || (_selectedOrigin!.latitude == 0.0 && _selectedOrigin!.longitude == 0.0)) {
+      _showSnackbar('Resolving origin location...', isError: false);
+      try {
+        final coords = await _mapsService.getCoordinatesFromAddress(startText);
+        if (coords != null) {
+          _selectedOrigin = LocationSearchResult(
+            displayName: startText,
+            subtitle: 'Address Location',
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            source: LocationSearchResultSource.googlePlaces,
+          );
+        } else {
+          _showSnackbar('Could not find coordinates for "$startText". Try selecting from suggestions.', isError: true);
+          return;
+        }
+      } catch (e) {
+        _showSnackbar('Geocoding origin failed. Check connection.', isError: true);
+        return;
+      }
     }
-    if (_selectedDestination!.latitude == 0.0 && _selectedDestination!.longitude == 0.0) {
-      _showSnackbar('Please wait — resolving destination location...', isError: false);
-      return;
+
+    // Geocode destination if unselected or missing coordinates
+    if (_selectedDestination == null || (_selectedDestination!.latitude == 0.0 && _selectedDestination!.longitude == 0.0)) {
+      _showSnackbar('Resolving destination location...', isError: false);
+      try {
+        final coords = await _mapsService.getCoordinatesFromAddress(endText);
+        if (coords != null) {
+          _selectedDestination = LocationSearchResult(
+            displayName: endText,
+            subtitle: 'Address Location',
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            source: LocationSearchResultSource.googlePlaces,
+          );
+        } else {
+          _showSnackbar('Could not find coordinates for "$endText". Try selecting from suggestions.', isError: true);
+          return;
+        }
+      } catch (e) {
+        _showSnackbar('Geocoding destination failed. Check connection.', isError: true);
+        return;
+      }
     }
+
     if (_selectedOrigin!.latitude == _selectedDestination!.latitude &&
         _selectedOrigin!.longitude == _selectedDestination!.longitude) {
       _showSnackbar('Start and destination must be different.', isError: true);
@@ -465,6 +507,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     debugPrint('[TRIP_DEBUG] Destination latitude: ${_selectedDestination!.latitude}');
     debugPrint('[TRIP_DEBUG] Destination longitude: ${_selectedDestination!.longitude}');
 
+    if (!mounted) return;
     final provider = context.read<MapsProvider>();
     await provider.planTrip(origin: _selectedOrigin!, destination: _selectedDestination!);
   }
@@ -1603,52 +1646,72 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
-          child: GlassContainer(
-            padding: const EdgeInsets.all(14),
-            borderRadius: 18,
-            child: Row(children: [
-              // Number badge — blue for recommended, green for others
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: (isRecommended ? _kBlue : _kGreen).withOpacity(0.2),
-                  shape: BoxShape.circle,
-                  border: isRecommended ? Border.all(color: _kBlue.withOpacity(0.5), width: 2) : null,
+          child: InkWell(
+            onTap: () {
+              mp.setSelectedMarker(charger);
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => ChargerMarkerDetailsSheet(charger: charger),
+              );
+            },
+            borderRadius: BorderRadius.circular(18),
+            child: GlassContainer(
+              padding: const EdgeInsets.all(14),
+              borderRadius: 18,
+              child: Row(children: [
+                // Number badge — blue for recommended, green for others
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: (isRecommended ? _kBlue : _kGreen).withOpacity(0.2),
+                    shape: BoxShape.circle,
+                    border: isRecommended ? Border.all(color: _kBlue.withOpacity(0.5), width: 2) : null,
+                  ),
+                  child: Center(child: isRecommended
+                      ? const Icon(Icons.star, color: _kBlue, size: 16)
+                      : Text('${idx + 1}',
+                          style: GoogleFonts.outfit(color: _kGreen, fontWeight: FontWeight.bold, fontSize: 14))),
                 ),
-                child: Center(child: isRecommended
-                    ? const Icon(Icons.star, color: _kBlue, size: 16)
-                    : Text('${idx + 1}',
-                        style: GoogleFonts.outfit(color: _kGreen, fontWeight: FontWeight.bold, fontSize: 14))),
-              ),
-              const SizedBox(width: 14),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Expanded(child: Text(charger.title,
-                      style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                      maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  if (isRecommended)
-                    Container(
-                      margin: const EdgeInsets.only(left: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: _kBlue.withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
-                      child: Text('REC', style: GoogleFonts.outfit(color: _kBlue, fontSize: 9, fontWeight: FontWeight.bold)),
-                    ),
-                ]),
-                const SizedBox(height: 4),
-                Text('${charger.network} • ${charger.power} (${charger.powerType})',
-                    style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
-                const SizedBox(height: 2),
-                Text(
-                  '${charger.connectors.join(", ")} • '
-                  '${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km from route" : "On route"}',
-                  style: GoogleFonts.outfit(color: Colors.white54, fontSize: 11),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(child: Text(charger.title,
+                        style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                        maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    if (isRecommended)
+                      Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: _kBlue.withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
+                        child: Text('REC', style: GoogleFonts.outfit(color: _kBlue, fontSize: 9, fontWeight: FontWeight.bold)),
+                      ),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text('${charger.network} • ${charger.power} (${charger.powerType})',
+                      style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${charger.connectors.join(", ")} • '
+                    '${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km from route" : "On route"}',
+                    style: GoogleFonts.outfit(color: Colors.white54, fontSize: 11),
+                  ),
+                ])),
+                IconButton(
+                  icon: const Icon(Icons.arrow_forward_ios, color: AppColors.primary, size: 16),
+                  onPressed: () {
+                    mp.setSelectedMarker(charger);
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => ChargerMarkerDetailsSheet(charger: charger),
+                    );
+                  },
                 ),
-              ])),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward_ios, color: AppColors.primary, size: 16),
-                onPressed: () => mp.setSelectedMarker(charger),
-              ),
-            ]),
+              ]),
+            ),
           ),
         );
       }).toList(),

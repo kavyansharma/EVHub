@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/map_marker_model.dart';
+import '../../models/location_search_result.dart';
 import '../../providers/maps_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/charger_source_badge.dart';
 import '../../services/smart_charger_ranking_service.dart';
 import '../../services/charging_time_estimator_service.dart';
-import '../../services/navigation_launcher_service.dart';
 import '../../screens/phase4/charger_details_screen.dart';
+import '../../screens/phase4/in_app_navigation_screen.dart';
 
 /// Synchronous Charger Details Bottom Sheet.
 /// Immediately renders complete charger details from the in-memory [charger] object
@@ -28,6 +30,83 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
     if (net.contains('jio')) return AppColors.accentPurple;
     if (net.contains('zeon')) return AppColors.secondary;
     return const Color(0xFF10B981);
+  }
+
+  void _handleNavigate(BuildContext context) {
+    if (!charger.hasValidCoordinates) {
+      final scaffold = ScaffoldMessenger.of(context);
+      final address = charger.displayAddress.trim();
+      scaffold.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Navigation unavailable for this charger because location coordinates are missing.',
+            style: GoogleFonts.outfit(color: Colors.white),
+          ),
+          backgroundColor: const Color(0xFF1A1D2E),
+          behavior: SnackBarBehavior.floating,
+          action: address.isNotEmpty
+              ? SnackBarAction(
+                  label: 'Open Address in Google Maps',
+                  textColor: const Color(0xFF3B82F6),
+                  onPressed: () async {
+                    final query = Uri.encodeComponent(address);
+                    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+                    try {
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                      }
+                    } catch (_) {}
+                  },
+                )
+              : null,
+        ),
+      );
+      return;
+    }
+
+    final mapsProvider = context.read<MapsProvider>();
+    Navigator.of(context).pop();
+
+    LocationSearchResult origin;
+    if (mapsProvider.hasLocationPermission && mapsProvider.currentLocation != null) {
+      origin = LocationSearchResult(
+        displayName: 'Current Location',
+        subtitle: 'Live GPS Position',
+        latitude: mapsProvider.currentLocation!['latitude']!,
+        longitude: mapsProvider.currentLocation!['longitude']!,
+        source: LocationSearchResultSource.localFallback,
+      );
+    } else {
+      final fallbackLat = mapsProvider.currentLocation?['latitude'] ?? 28.6304;
+      final fallbackLng = mapsProvider.currentLocation?['longitude'] ?? 77.2177;
+      origin = LocationSearchResult(
+        displayName: 'Current Map Location',
+        subtitle: 'Live location is unavailable',
+        latitude: fallbackLat,
+        longitude: fallbackLng,
+        source: LocationSearchResultSource.localFallback,
+      );
+    }
+
+    final destination = LocationSearchResult(
+      displayName: charger.name,
+      subtitle: charger.displayAddress,
+      latitude: charger.latitude,
+      longitude: charger.longitude,
+      source: LocationSearchResultSource.localFallback,
+    );
+
+    mapsProvider.planTrip(origin: origin, destination: destination);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InAppNavigationScreen(
+          origin: origin,
+          destination: destination,
+        ),
+      ),
+    );
   }
 
   @override
@@ -277,12 +356,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                         child: SizedBox(
                           height: 50,
                           child: OutlinedButton.icon(
-                            onPressed: () {
-                              const NavigationLauncherService().launchNavigation(
-                                charger.latitude,
-                                charger.longitude,
-                              );
-                            },
+                            onPressed: () => _handleNavigate(context),
                             icon: const Icon(Icons.navigation_outlined, color: Color(0xFF3B82F6), size: 18),
                             label: Text(
                               'NAVIGATE',

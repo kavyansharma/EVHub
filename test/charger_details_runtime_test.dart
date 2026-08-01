@@ -9,6 +9,7 @@ import 'package:evhub/repositories/firestore_charger_repository.dart';
 import 'package:evhub/services/maps_service.dart';
 import 'package:evhub/core/widgets/charger_marker_details_sheet.dart';
 import 'package:evhub/screens/phase4/charger_details_screen.dart';
+import 'package:evhub/screens/phase4/in_app_navigation_screen.dart';
 
 class MockFirestoreRepoForRuntimeDetailsTest implements FirestoreChargerRepository {
   @override
@@ -146,7 +147,10 @@ void main() {
       expect(navButton, findsOneWidget);
 
       await tester.tap(navButton);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(InAppNavigationScreen), findsOneWidget);
     });
 
     testWidgets('F. Start charging button works', (WidgetTester tester) async {
