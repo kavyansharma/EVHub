@@ -13,7 +13,21 @@ class NavigationLauncherService {
     double latitude,
     double longitude, {
     String? destinationName,
+    String? destinationId,
   }) async {
+    final String googleMapsUrl =
+        'https://www.google.com/maps/dir/?api=1&destination=$latitude,$longitude&travelmode=driving&dir_action=navigate';
+
+    debugPrint('[EVHUB_NAV] ========================================');
+    debugPrint('[EVHUB_NAV] NAVIGATE BUTTON CLICKED');
+    debugPrint('[EVHUB_NAV] Charger Name: ${destinationName ?? "Charger"}');
+    debugPrint('[EVHUB_NAV] Charger ID: ${destinationId ?? "N/A"}');
+    debugPrint('[EVHUB_NAV] Latitude: $latitude');
+    debugPrint('[EVHUB_NAV] Longitude: $longitude');
+    debugPrint('[EVHUB_NAV] Building Google Maps URL');
+    debugPrint('[EVHUB_NAV] URL: $googleMapsUrl');
+    debugPrint('[EVHUB_NAV] Calling launchUrl directly from user click');
+
     if (latitude.isNaN ||
         longitude.isNaN ||
         latitude == 0.0 ||
@@ -23,30 +37,28 @@ class NavigationLauncherService {
         longitude < -180.0 ||
         longitude > 180.0) {
       debugPrint('[EVHUB_NAV_ERROR] Invalid navigation coordinates: ($latitude, $longitude)');
+      debugPrint('[EVHUB_NAV] ========================================');
       return false;
     }
-
-    final String googleMapsUrl =
-        'https://www.google.com/maps/dir/?api=1&destination=$latitude,$longitude&travelmode=driving&dir_action=navigate';
-    debugPrint('[EVHUB_NAV] Destination Name: ${destinationName ?? "Charger"}');
-    debugPrint('[EVHUB_NAV] Destination Latitude: $latitude');
-    debugPrint('[EVHUB_NAV] Destination Longitude: $longitude');
-    debugPrint('[EVHUB_NAV] Google Maps URL: $googleMapsUrl');
-    debugPrint('[EVHUB_NAV] Launching Google Maps');
 
     final Uri uri = Uri.parse(googleMapsUrl);
 
     try {
-      bool launched = false;
-      if (await canLaunchUrl(uri)) {
-        launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final bool launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_blank',
+      );
+      if (!launched) {
+        debugPrint('[EVHUB_NAV] LAUNCH FAILED: launchUrl returned false');
       } else {
-        launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        debugPrint('[EVHUB_NAV] Launch result: true');
       }
-      debugPrint('[EVHUB_NAV] Google Maps Launch Result: ${launched ? "SUCCESS" : "FAILED"}');
+      debugPrint('[EVHUB_NAV] ========================================');
       return launched;
     } catch (e) {
-      debugPrint('[EVHUB_NAV] Google Maps Launch Result: FAILED ($e)');
+      debugPrint('[EVHUB_NAV] LAUNCH EXCEPTION: $e');
+      debugPrint('[EVHUB_NAV] ========================================');
       return false;
     }
   }

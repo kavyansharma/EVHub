@@ -37,12 +37,6 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
     final name = charger.name;
     final id = charger.id;
 
-    debugPrint('[EVHUB_NAV] NAVIGATE BUTTON PRESSED');
-    debugPrint('[EVHUB_NAV] Charger Name: $name');
-    debugPrint('[EVHUB_NAV] Charger ID: $id');
-    debugPrint('[EVHUB_NAV] Destination Latitude: $lat');
-    debugPrint('[EVHUB_NAV] Destination Longitude: $lng');
-
     final isLatValid = !lat.isNaN && lat != 0.0 && lat >= -90.0 && lat <= 90.0;
     final isLngValid = !lng.isNaN && lng != 0.0 && lng >= -180.0 && lng <= 180.0;
 
@@ -50,11 +44,11 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
     final address = charger.displayAddress.trim();
 
     if (!charger.hasValidCoordinates || !isLatValid || !isLngValid) {
-      debugPrint('[EVHUB_NAV_ERROR] Navigation unavailable due to missing/invalid coordinates for charger: lat=$lat, lng=$lng');
+      debugPrint('[EVHUB_NAV_ERROR] Invalid navigation coordinates for charger: lat=$lat, lng=$lng');
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(
-            "Navigation is unavailable because this charger's location coordinates are missing.",
+            "Navigation unavailable: this charger does not have a valid location.",
             style: GoogleFonts.outfit(color: Colors.white),
           ),
           backgroundColor: const Color(0xFF1A1D2E),
@@ -68,7 +62,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                     final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
                     try {
                       if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                        await launchUrl(url, mode: LaunchMode.externalApplication, webOnlyWindowName: '_blank');
                       }
                     } catch (e) {
                       debugPrint('[EVHUB_NAV_ERROR] External address search error: $e');
@@ -81,22 +75,21 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       return;
     }
 
-    // Safely capture root navigator before closing bottom sheet
+    // Safely capture root navigator before popping bottom sheet
     final navigator = Navigator.of(context, rootNavigator: true);
 
-    debugPrint('[EVHUB_NAV] Closing Charger Details Sheet');
-    navigator.pop();
-
+    // Synchronously launch Google Maps directly from user gesture callback
     NavigationLauncherService().launchNavigation(
       lat,
       lng,
       destinationName: name,
+      destinationId: id,
     ).then((success) {
       if (!success) {
         scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
-              'Unable to open Google Maps. Please try again.',
+              'Google Maps was blocked by your browser. Please allow pop-ups for EVHub and tap NAVIGATE again.',
               style: GoogleFonts.outfit(color: Colors.white),
             ),
             backgroundColor: const Color(0xFF1A1D2E),
@@ -105,6 +98,9 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
         );
       }
     });
+
+    // Close bottom sheet
+    navigator.pop();
   }
 
   @override
