@@ -32,14 +32,24 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
     return const Color(0xFF10B981);
   }
 
-  void _handleNavigate(BuildContext context) {
-    if (!charger.hasValidCoordinates) {
+  void _onNavigatePressed(BuildContext context) {
+    debugPrint('[EVHUB_NAV] NAVIGATE BUTTON PRESSED');
+    debugPrint('[EVHUB_NAV] Charger: ${charger.name}');
+    debugPrint('[EVHUB_NAV] Charger ID: ${charger.id}');
+    debugPrint('[EVHUB_NAV] Destination Lat: ${charger.latitude}');
+    debugPrint('[EVHUB_NAV] Destination Lng: ${charger.longitude}');
+
+    final isLatValid = charger.latitude != 0.0 && charger.latitude >= -90.0 && charger.latitude <= 90.0;
+    final isLngValid = charger.longitude != 0.0 && charger.longitude >= -180.0 && charger.longitude <= 180.0;
+
+    if (!charger.hasValidCoordinates || !isLatValid || !isLngValid) {
+      debugPrint('[EVHUB_NAV_ERROR] Invalid coordinates for charger: lat=${charger.latitude}, lng=${charger.longitude}');
       final scaffold = ScaffoldMessenger.of(context);
       final address = charger.displayAddress.trim();
       scaffold.showSnackBar(
         SnackBar(
           content: Text(
-            'Navigation unavailable for this charger because location coordinates are missing.',
+            'Charger coordinates are unavailable.',
             style: GoogleFonts.outfit(color: Colors.white),
           ),
           backgroundColor: const Color(0xFF1A1D2E),
@@ -55,7 +65,9 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                       if (await canLaunchUrl(url)) {
                         await launchUrl(url, mode: LaunchMode.externalApplication);
                       }
-                    } catch (_) {}
+                    } catch (e) {
+                      debugPrint('[EVHUB_NAV_ERROR] External search error: $e');
+                    }
                   },
                 )
               : null,
@@ -65,7 +77,6 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
     }
 
     final mapsProvider = context.read<MapsProvider>();
-    Navigator.of(context).pop();
 
     LocationSearchResult origin;
     if (mapsProvider.hasLocationPermission && mapsProvider.currentLocation != null) {
@@ -88,6 +99,9 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       );
     }
 
+    debugPrint('[EVHUB_NAV] Origin Lat: ${origin.latitude}');
+    debugPrint('[EVHUB_NAV] Origin Lng: ${origin.longitude}');
+
     final destination = LocationSearchResult(
       displayName: charger.name,
       subtitle: charger.displayAddress,
@@ -96,17 +110,25 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       source: LocationSearchResultSource.localFallback,
     );
 
+    // CRITICAL FIX: Capture NavigatorState BEFORE popping modal bottom sheet!
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    debugPrint('[EVHUB_NAV] Closing Charger Details Bottom Sheet');
+    navigator.pop();
+
+    debugPrint('[EVHUB_NAV] Opening InAppNavigationScreen');
     mapsProvider.planTrip(origin: origin, destination: destination);
 
-    Navigator.push(
-      context,
+    navigator.push(
       MaterialPageRoute(
         builder: (_) => InAppNavigationScreen(
           origin: origin,
           destination: destination,
         ),
       ),
-    );
+    ).catchError((e, stack) {
+      debugPrint('[EVHUB_NAV_ERROR] Error pushing InAppNavigationScreen: $e\n$stack');
+    });
   }
 
   @override
@@ -356,7 +378,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                         child: SizedBox(
                           height: 50,
                           child: OutlinedButton.icon(
-                            onPressed: () => _handleNavigate(context),
+                            onPressed: () => _onNavigatePressed(context),
                             icon: const Icon(Icons.navigation_outlined, color: Color(0xFF3B82F6), size: 18),
                             label: Text(
                               'NAVIGATE',
@@ -394,6 +416,13 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      'Navigation Status: Ready',
+                      style: GoogleFonts.outfit(color: Colors.white38, fontSize: 10),
+                    ),
                   ),
                 ],
               ),

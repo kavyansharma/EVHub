@@ -755,18 +755,27 @@ class MapsProvider extends ChangeNotifier {
     _markers = [];
     notifyListeners();
 
+    debugPrint('[EVHUB_NAV] Route calculation started');
+    debugPrint('[EVHUB_NAV] Origin: (${origin.latitude}, ${origin.longitude})');
+    debugPrint('[EVHUB_NAV] Destination: (${dest.latitude}, ${dest.longitude})');
     debugPrint('[TRIP_DEBUG] Route API request started');
     debugPrint('[TRIP_DEBUG] Origin: (${origin.latitude}, ${origin.longitude})');
     debugPrint('[TRIP_DEBUG] Destination: (${dest.latitude}, ${dest.longitude})');
 
     try {
       final directions = await _mapsService.getDirections(origin, dest);
+      debugPrint('[EVHUB_NAV] Route API response received: ${directions != null ? "SUCCESS" : "FAILED (null)"}');
       debugPrint('[TRIP_DEBUG] Route API response received: ${directions != null ? "SUCCESS" : "NULL (failed)"}');
 
       if (directions != null) {
         _routePoints = directions['points'] as List<LatLng>;
         _routeDistance = directions['distance'] as String;
         _routeDuration = directions['duration'] as String;
+
+        debugPrint('[EVHUB_NAV] Route calculation completed');
+        debugPrint('[EVHUB_NAV] Route distance: $_routeDistance');
+        debugPrint('[EVHUB_NAV] Route duration: $_routeDuration');
+        debugPrint('[EVHUB_NAV] Route points: ${_routePoints.length}');
 
         debugPrint('[TRIP_DEBUG] Route coordinate count: ${_routePoints.length}');
         debugPrint('[TRIP_DEBUG] Route distance: $_routeDistance');

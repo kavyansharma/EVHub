@@ -228,7 +228,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // TEST D: SnackBar warning shown, InAppNavigationScreen not opened
-      expect(find.textContaining('Navigation unavailable for this charger because location coordinates are missing'), findsOneWidget);
+      expect(find.textContaining('Charger coordinates are unavailable.'), findsOneWidget);
       expect(find.byType(InAppNavigationScreen), findsNothing);
     });
 

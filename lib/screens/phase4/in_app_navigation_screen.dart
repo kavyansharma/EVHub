@@ -28,6 +28,9 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('[EVHUB_NAV] InAppNavigationScreen opened');
+    debugPrint('[EVHUB_NAV] Origin: (${widget.origin.latitude}, ${widget.origin.longitude}) - ${widget.origin.displayName}');
+    debugPrint('[EVHUB_NAV] Destination: (${widget.destination.latitude}, ${widget.destination.longitude}) - ${widget.destination.displayName}');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fitMapBounds();
     });
@@ -301,6 +304,53 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               'Use Current Map Location',
                               style: GoogleFonts.outfit(
                                 color: const Color(0xFF3B82F6),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Route calculation failure banner with Retry
+                  if (mp.routePoints.isEmpty && !mp.isLoadingRoute && !mp.isLoading) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Unable to calculate route.',
+                              style: GoogleFonts.outfit(
+                                color: Colors.redAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () {
+                              mp.planTrip(origin: widget.origin, destination: widget.destination);
+                            },
+                            child: Text(
+                              'Retry Route',
+                              style: GoogleFonts.outfit(
+                                color: const Color(0xFF10B981),
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                               ),
