@@ -243,19 +243,39 @@ class MapsService {
     return null;
   }
 
-  // Fetch coordinates using Google Geocoding API with robust Indian City Fallback
+  // OpenStreetMap Nominatim Fallback for exact address & landmark geocoding
+  Future<LatLng?> _getNominatimCoordinates(String address) async {
+    try {
+      final encoded = Uri.encodeComponent(address);
+      final url = Uri.parse('https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=1');
+      final response = await http.get(
+        url,
+        headers: {'User-Agent': 'EVHub-App/1.0'},
+      ).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>?;
+        if (data != null && data.isNotEmpty) {
+          final first = data[0] as Map<String, dynamic>;
+          final lat = double.tryParse(first['lat']?.toString() ?? '');
+          final lng = double.tryParse(first['lon']?.toString() ?? '');
+          if (lat != null && lng != null) {
+            debugPrint('[MapsService] Nominatim OSM Geocoded "$address" -> ($lat, $lng)');
+            return LatLng(lat, lng);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[MapsService] Nominatim geocoding error: $e');
+    }
+    return null;
+  }
+
+  // Fetch coordinates using Google Geocoding API, OpenStreetMap Nominatim, with robust Indian City Fallback
   Future<LatLng?> getCoordinatesFromAddress(String address) async {
     final cleanQuery = address.trim().toLowerCase();
     if (cleanQuery.isEmpty) return null;
 
-    // 1. Check local search index first
-    final localMatches = searchLocalLocationIndex(cleanQuery);
-    if (localMatches.isNotEmpty) {
-      final match = localMatches.first;
-      debugPrint('[MapsService] Found city match in local geocode index: "${match.displayName}" -> ${match.coordinates}');
-      return match.coordinates;
-    }
-
+    // 1. Try Google Geocoding API for exact address resolution
     final queryParams = {
       'address': address,
       'key': _apiKey,
@@ -263,21 +283,39 @@ class MapsService {
     final url = _buildUri('/maps/api/geocode/json', queryParams);
 
     try {
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final results = data['results'] as List<dynamic>?;
-        if (results != null && results.isNotEmpty) {
-          final loc = results[0]['geometry']?['location'];
-          if (loc != null) {
-            final lat = (loc['lat'] as num).toDouble();
-            final lng = (loc['lng'] as num).toDouble();
-            return LatLng(lat, lng);
+        final status = data['status'] as String? ?? 'UNKNOWN';
+        if (status == 'OK') {
+          final results = data['results'] as List<dynamic>?;
+          if (results != null && results.isNotEmpty) {
+            final loc = results[0]['geometry']?['location'];
+            if (loc != null) {
+              final lat = (loc['lat'] as num).toDouble();
+              final lng = (loc['lng'] as num).toDouble();
+              debugPrint('[MapsService] Google Geocoded "$address" -> ($lat, $lng)');
+              return LatLng(lat, lng);
+            }
           }
         }
       }
     } catch (e) {
-      debugPrint("Geocoding API error: $e");
+      debugPrint('[MapsService] Google Geocoding API error: $e');
+    }
+
+    // 2. OpenStreetMap Nominatim Fallback for real-world street addresses & landmarks
+    final osmCoords = await _getNominatimCoordinates(address);
+    if (osmCoords != null) {
+      return osmCoords;
+    }
+
+    // 3. Fall back to local city dictionary index
+    final localMatches = searchLocalLocationIndex(cleanQuery);
+    if (localMatches.isNotEmpty) {
+      final match = localMatches.first;
+      debugPrint('[MapsService] Found city match in local geocode index: "${match.displayName}" -> ${match.coordinates}');
+      return match.coordinates;
     }
 
     return null;

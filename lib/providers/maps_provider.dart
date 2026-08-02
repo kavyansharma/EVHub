@@ -829,11 +829,10 @@ class MapsProvider extends ChangeNotifier {
         if (_markers.isNotEmpty) {
           _searchStatusMessage = '${_markers.length} chargers found along ${usedRadius.toInt()}km route corridor';
         } else {
-          _searchStatusMessage = 'Route found, but no EV chargers found within ${corridorSteps.last.toInt()}km of route. '
-              'Try a different route or check back later.';
+          _searchStatusMessage = 'No EV chargers were found along this route.';
         }
       } else {
-        _searchStatusMessage = 'Unable to calculate a driving route right now. Please try again or open the destination in Google Maps.';
+        _searchStatusMessage = 'Unable to calculate a driving route right now. Please try again.';
         debugPrint('[TRIP_DEBUG] Route API returned null — both Google Directions and OSRM failed.');
       }
     } catch (e) {

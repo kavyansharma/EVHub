@@ -461,11 +461,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
             source: LocationSearchResultSource.googlePlaces,
           );
         } else {
-          _showSnackbar('Could not find coordinates for "$startText". Try selecting from suggestions.', isError: true);
+          _showSnackbar('Could not find the starting location. Please try a more specific address.', isError: true);
           return;
         }
       } catch (e) {
-        _showSnackbar('Geocoding origin failed. Check connection.', isError: true);
+        _showSnackbar('Could not find the starting location. Please try a more specific address.', isError: true);
         return;
       }
     }
@@ -484,11 +484,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
             source: LocationSearchResultSource.googlePlaces,
           );
         } else {
-          _showSnackbar('Could not find coordinates for "$endText". Try selecting from suggestions.', isError: true);
+          _showSnackbar('Could not find the destination. Please try a more specific address.', isError: true);
           return;
         }
       } catch (e) {
-        _showSnackbar('Geocoding destination failed. Check connection.', isError: true);
+        _showSnackbar('Could not find the destination. Please try a more specific address.', isError: true);
         return;
       }
     }

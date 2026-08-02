@@ -176,20 +176,34 @@ class HybridChargerRepository {
   /// Mode 3: Route Chargers Engine
   /// Fetches all Firestore chargers and filters chargers located within [corridorRadiusKm] (default 10.0 km)
   /// of any point along the route [polylinePoints].
+  /// Deduplicates chargers and sorts them in direction of travel (origin -> destination progress).
   Future<List<MapMarkerModel>> searchRouteCorridorChargers({
     required List<LatLng> polylinePoints,
     double corridorRadiusKm = 10.0,
   }) async {
     if (polylinePoints.isEmpty) return [];
 
+    // Precalculate cumulative polyline distance array in km from origin
+    final List<double> cumulativeDistKm = List<double>.filled(polylinePoints.length, 0.0);
+    for (int i = 1; i < polylinePoints.length; i++) {
+      final prev = polylinePoints[i - 1];
+      final curr = polylinePoints[i];
+      final segM = Geolocator.distanceBetween(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
+      cumulativeDistKm[i] = cumulativeDistKm[i - 1] + (segM / 1000.0);
+    }
+
     final List<MapMarkerModel> allChargers = await _firestoreRepository.getPublicVerifiedChargers();
     final List<MapMarkerModel> corridorChargers = [];
+    final Map<String, double> routeProgressMap = {};
 
     for (final charger in allChargers) {
       if (!charger.hasValidCoordinates) continue;
 
       double minDistanceMeters = double.infinity;
-      for (final pt in polylinePoints) {
+      int bestPointIndex = 0;
+
+      for (int i = 0; i < polylinePoints.length; i++) {
+        final pt = polylinePoints[i];
         final distM = Geolocator.distanceBetween(
           pt.latitude,
           pt.longitude,
@@ -198,18 +212,34 @@ class HybridChargerRepository {
         );
         if (distM < minDistanceMeters) {
           minDistanceMeters = distM;
+          bestPointIndex = i;
         }
       }
 
       final minDistanceKm = minDistanceMeters / 1000.0;
       if (minDistanceKm <= corridorRadiusKm) {
         corridorChargers.add(charger.copyWith(distanceKm: minDistanceKm));
+        routeProgressMap[charger.id] = cumulativeDistKm[bestPointIndex];
       }
     }
 
-    corridorChargers.sort((a, b) => (a.distanceKm ?? 0).compareTo(b.distanceKm ?? 0));
-    debugPrint('[ROUTE-CORRIDOR-ENGINE] Found ${corridorChargers.length} chargers within $corridorRadiusKm km corridor of ${polylinePoints.length} polyline points');
-    return corridorChargers;
+    // Deduplicate chargers along corridor
+    final List<MapMarkerModel> deduplicated = [];
+    for (final c in corridorChargers) {
+      if (!deduplicated.any((existing) => _isDuplicate(existing, c))) {
+        deduplicated.add(c);
+      }
+    }
+
+    // Sort in travel order (from origin to destination along route progress)
+    deduplicated.sort((a, b) {
+      final progA = routeProgressMap[a.id] ?? 0.0;
+      final progB = routeProgressMap[b.id] ?? 0.0;
+      return progA.compareTo(progB);
+    });
+
+    debugPrint('[ROUTE-CORRIDOR-ENGINE] Found ${deduplicated.length} deduplicated chargers (travel order sorted) within $corridorRadiusKm km corridor of ${polylinePoints.length} polyline points');
+    return deduplicated;
   }
 
   /// Checks if two chargers are duplicates.
@@ -239,15 +269,15 @@ class HybridChargerRepository {
 
   /// Normalizes and compares charger title strings for similarity.
   bool _areNamesSimilar(String name1, String name2) {
+    const stopWords = {'charger', 'charging', 'station', 'ev', 'fast', 'hub', 'point', 'ac', 'dc'};
     final norm1 = _normalizeName(name1);
     final norm2 = _normalizeName(name2);
 
     if (norm1.isEmpty || norm2.isEmpty) return false;
     if (norm1 == norm2) return true;
-    if (norm1.contains(norm2) || norm2.contains(norm1)) return true;
 
-    final words1 = norm1.split(' ').where((w) => w.length > 2).toSet();
-    final words2 = norm2.split(' ').where((w) => w.length > 2).toSet();
+    final words1 = norm1.split(' ').where((w) => w.length > 2 && !stopWords.contains(w)).toSet();
+    final words2 = norm2.split(' ').where((w) => w.length > 2 && !stopWords.contains(w)).toSet();
 
     if (words1.isEmpty || words2.isEmpty) return false;
 
