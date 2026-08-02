@@ -53,6 +53,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   bool _isSearchingStart = false;
   bool _isSearchingEnd   = false;
+  bool _isPlanningTrip   = false;
 
   // Preset city routes for quick 1-tap trip selection
   static const List<Map<String, dynamic>> _quickRoutes = [
@@ -432,84 +433,93 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   void _planTrip() async {
-    _startFocusNode.unfocus();
-    _endFocusNode.unfocus();
+    if (_isPlanningTrip) return;
+    final mp = context.read<MapsProvider>();
+    if (mp.isLoadingRoute || mp.isLoading) return;
 
-    final startText = _startController.text.trim();
-    final endText   = _endController.text.trim();
+    setState(() => _isPlanningTrip = true);
 
-    if (startText.isEmpty) {
-      _showSnackbar('Please enter a starting location.', isError: true);
-      return;
-    }
-    if (endText.isEmpty) {
-      _showSnackbar('Please enter a destination.', isError: true);
-      return;
-    }
+    try {
+      _startFocusNode.unfocus();
+      _endFocusNode.unfocus();
 
-    // Geocode origin if unselected or missing coordinates
-    if (_selectedOrigin == null || (_selectedOrigin!.latitude == 0.0 && _selectedOrigin!.longitude == 0.0)) {
-      _showSnackbar('Resolving origin location...', isError: false);
-      try {
-        final coords = await _mapsService.getCoordinatesFromAddress(startText);
-        if (coords != null) {
-          _selectedOrigin = LocationSearchResult(
-            displayName: startText,
-            subtitle: 'Address Location',
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            source: LocationSearchResultSource.googlePlaces,
-          );
-        } else {
+      final startText = _startController.text.trim();
+      final endText   = _endController.text.trim();
+
+      if (startText.isEmpty) {
+        _showSnackbar('Please enter a starting location.', isError: true);
+        return;
+      }
+      if (endText.isEmpty) {
+        _showSnackbar('Please enter a destination.', isError: true);
+        return;
+      }
+
+      // Geocode origin if unselected or missing coordinates
+      if (_selectedOrigin == null || (_selectedOrigin!.latitude == 0.0 && _selectedOrigin!.longitude == 0.0)) {
+        _showSnackbar('Resolving origin location...', isError: false);
+        try {
+          final coords = await _mapsService.getCoordinatesFromAddress(startText);
+          if (coords != null) {
+            _selectedOrigin = LocationSearchResult(
+              displayName: startText,
+              subtitle: 'Address Location',
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              source: LocationSearchResultSource.googlePlaces,
+            );
+          } else {
+            _showSnackbar('Could not find the starting location. Please try a more specific address.', isError: true);
+            return;
+          }
+        } catch (e) {
           _showSnackbar('Could not find the starting location. Please try a more specific address.', isError: true);
           return;
         }
-      } catch (e) {
-        _showSnackbar('Could not find the starting location. Please try a more specific address.', isError: true);
-        return;
       }
-    }
 
-    // Geocode destination if unselected or missing coordinates
-    if (_selectedDestination == null || (_selectedDestination!.latitude == 0.0 && _selectedDestination!.longitude == 0.0)) {
-      _showSnackbar('Resolving destination location...', isError: false);
-      try {
-        final coords = await _mapsService.getCoordinatesFromAddress(endText);
-        if (coords != null) {
-          _selectedDestination = LocationSearchResult(
-            displayName: endText,
-            subtitle: 'Address Location',
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            source: LocationSearchResultSource.googlePlaces,
-          );
-        } else {
+      // Geocode destination if unselected or missing coordinates
+      if (_selectedDestination == null || (_selectedDestination!.latitude == 0.0 && _selectedDestination!.longitude == 0.0)) {
+        _showSnackbar('Resolving destination location...', isError: false);
+        try {
+          final coords = await _mapsService.getCoordinatesFromAddress(endText);
+          if (coords != null) {
+            _selectedDestination = LocationSearchResult(
+              displayName: endText,
+              subtitle: 'Address Location',
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              source: LocationSearchResultSource.googlePlaces,
+            );
+          } else {
+            _showSnackbar('Could not find the destination. Please try a more specific address.', isError: true);
+            return;
+          }
+        } catch (e) {
           _showSnackbar('Could not find the destination. Please try a more specific address.', isError: true);
           return;
         }
-      } catch (e) {
-        _showSnackbar('Could not find the destination. Please try a more specific address.', isError: true);
+      }
+
+      if (_selectedOrigin!.latitude == _selectedDestination!.latitude &&
+          _selectedOrigin!.longitude == _selectedDestination!.longitude) {
+        _showSnackbar('Start and destination must be different.', isError: true);
         return;
       }
+
+      debugPrint('[TRIP_DEBUG] Route request started');
+      debugPrint('[TRIP_DEBUG] Origin selected: ${_selectedOrigin!.displayName}');
+      debugPrint('[TRIP_DEBUG] Origin latitude: ${_selectedOrigin!.latitude}');
+      debugPrint('[TRIP_DEBUG] Origin longitude: ${_selectedOrigin!.longitude}');
+      debugPrint('[TRIP_DEBUG] Destination selected: ${_selectedDestination!.displayName}');
+      debugPrint('[TRIP_DEBUG] Destination latitude: ${_selectedDestination!.latitude}');
+      debugPrint('[TRIP_DEBUG] Destination longitude: ${_selectedDestination!.longitude}');
+
+      if (!mounted) return;
+      await mp.planTrip(origin: _selectedOrigin!, destination: _selectedDestination!);
+    } finally {
+      if (mounted) setState(() => _isPlanningTrip = false);
     }
-
-    if (_selectedOrigin!.latitude == _selectedDestination!.latitude &&
-        _selectedOrigin!.longitude == _selectedDestination!.longitude) {
-      _showSnackbar('Start and destination must be different.', isError: true);
-      return;
-    }
-
-    debugPrint('[TRIP_DEBUG] Route request started');
-    debugPrint('[TRIP_DEBUG] Origin selected: ${_selectedOrigin!.displayName}');
-    debugPrint('[TRIP_DEBUG] Origin latitude: ${_selectedOrigin!.latitude}');
-    debugPrint('[TRIP_DEBUG] Origin longitude: ${_selectedOrigin!.longitude}');
-    debugPrint('[TRIP_DEBUG] Destination selected: ${_selectedDestination!.displayName}');
-    debugPrint('[TRIP_DEBUG] Destination latitude: ${_selectedDestination!.latitude}');
-    debugPrint('[TRIP_DEBUG] Destination longitude: ${_selectedDestination!.longitude}');
-
-    if (!mounted) return;
-    final provider = context.read<MapsProvider>();
-    await provider.planTrip(origin: _selectedOrigin!, destination: _selectedDestination!);
   }
 
   void _clearTrip() {
@@ -1706,22 +1716,61 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                   const SizedBox(height: 3),
                   Text(
                     'From start: ${charger.routeDistanceFromOriginKm?.toStringAsFixed(1) ?? "0"} km • '
-                    'To dest: ${charger.routeDistanceToDestKm?.toStringAsFixed(1) ?? "0"} km',
+                    'To dest: ${charger.routeDistanceToDestKm?.toStringAsFixed(1) ?? "0"} km • '
+                    'Off route: ${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km" : "On route"}',
                     style: GoogleFonts.outfit(color: _kBlue, fontSize: 11, fontWeight: FontWeight.bold),
                   ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            mp.setSelectedMarker(charger);
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => ChargerMarkerDetailsSheet(charger: charger),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white24),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                          ),
+                          icon: const Icon(Icons.info_outline, size: 13, color: _kBlue),
+                          label: Text('View Details', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            mp.setSelectedMarker(charger);
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => ChargerMarkerDetailsSheet(charger: charger),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _kBlue.withOpacity(0.2),
+                            foregroundColor: _kBlue,
+                            elevation: 0,
+                            side: BorderSide(color: _kBlue.withOpacity(0.4)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                          ),
+                          icon: const Icon(Icons.navigation, size: 13, color: _kBlue),
+                          label: Text('Navigate', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
                 ])),
-                IconButton(
-                  icon: const Icon(Icons.arrow_forward_ios, color: AppColors.primary, size: 16),
-                  onPressed: () {
-                    mp.setSelectedMarker(charger);
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => ChargerMarkerDetailsSheet(charger: charger),
-                    );
-                  },
-                ),
               ]),
             ),
           ),
