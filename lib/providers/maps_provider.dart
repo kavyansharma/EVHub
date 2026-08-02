@@ -247,9 +247,10 @@ class MapsProvider extends ChangeNotifier {
     );
   }
 
-  Future<bool> launchExternalNavigation(MapMarkerModel charger) async {
+  bool launchExternalNavigation(MapMarkerModel charger) {
     return _navigationService.launchNavigation(charger.latitude, charger.longitude, destinationName: charger.name);
   }
+
 
   int get estimatedBatteryUsage {
     if (_routeDistance == null) return 0;

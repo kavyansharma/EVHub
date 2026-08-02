@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../models/map_marker_model.dart';
 import '../../providers/maps_provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -10,6 +9,8 @@ import '../../services/smart_charger_ranking_service.dart';
 import '../../services/charging_time_estimator_service.dart';
 import '../../services/navigation_launcher_service.dart';
 import '../../screens/phase4/charger_details_screen.dart';
+
+
 
 /// Synchronous Charger Details Bottom Sheet.
 /// Immediately renders complete charger details from the in-memory [charger] object
@@ -32,94 +33,13 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
   }
 
   void _onNavigatePressed(BuildContext context) {
-    debugPrint('[EVHUB_NAV_DEBUG] BUTTON CALLBACK ENTERED');
-    final lat = charger.latitude;
-    final lng = charger.longitude;
-    final name = charger.name;
-    final id = charger.id;
-
-    debugPrint('[EVHUB_NAV_DEBUG] Charger Name: $name');
-    debugPrint('[EVHUB_NAV_DEBUG] Charger ID: $id');
-    debugPrint('[EVHUB_NAV_DEBUG] Latitude: $lat');
-    debugPrint('[EVHUB_NAV_DEBUG] Longitude: $lng');
-
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final address = charger.displayAddress.trim();
-
-    final isLatValid = !lat.isNaN && lat != 0.0 && lat >= -90.0 && lat <= 90.0;
-    final isLngValid = !lng.isNaN && lng != 0.0 && lng >= -180.0 && lng <= 180.0;
-
-    if (!charger.hasValidCoordinates || !isLatValid || !isLngValid) {
-      debugPrint('[EVHUB_NAV_ERROR] Invalid navigation coordinates for charger: lat=$lat, lng=$lng');
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            "Navigation unavailable: this charger does not have a valid location.",
-            style: GoogleFonts.outfit(color: Colors.white),
-          ),
-          backgroundColor: const Color(0xFF1A1D2E),
-          behavior: SnackBarBehavior.floating,
-          action: address.isNotEmpty
-              ? SnackBarAction(
-                  label: 'OPEN ADDRESS IN GOOGLE MAPS',
-                  textColor: const Color(0xFF3B82F6),
-                  onPressed: () async {
-                    final query = Uri.encodeComponent(address);
-                    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
-                    try {
-                      if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.externalApplication, webOnlyWindowName: '_blank');
-                      }
-                    } catch (e) {
-                      debugPrint('[EVHUB_NAV_ERROR] External address search error: $e');
-                    }
-                  },
-                )
-              : null,
-        ),
-      );
-      return;
-    }
-
-    // STEP 7: Show visible runtime debug state SnackBar for valid navigation launch
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Opening Google Maps navigation...',
-          style: GoogleFonts.outfit(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF10B981),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
+    const NavigationLauncherService().openGoogleMapsNavigation(
+      charger.latitude,
+      charger.longitude,
+      destinationName: charger.name,
+      destinationId: charger.id,
+      screenName: 'ChargerMarkerDetailsSheet',
     );
-
-    // Safely capture root navigator before popping bottom sheet
-    final navigator = Navigator.of(context, rootNavigator: true);
-
-    // Synchronously launch Google Maps directly from user gesture callback
-    NavigationLauncherService().launchNavigation(
-      lat,
-      lng,
-      destinationName: name,
-      destinationId: id,
-    ).then((success) {
-      if (!success) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Google Maps was blocked by your browser. Please allow pop-ups for EVHub and tap NAVIGATE again.',
-              style: GoogleFonts.outfit(color: Colors.white),
-            ),
-            backgroundColor: const Color(0xFF1A1D2E),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    });
-
-    debugPrint('[EVHUB_NAV_DEBUG] BOTTOM SHEET CLOSE REQUESTED');
-    navigator.pop();
   }
 
   @override

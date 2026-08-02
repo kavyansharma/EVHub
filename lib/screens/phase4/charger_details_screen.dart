@@ -11,6 +11,10 @@ import '../../services/smart_charger_ranking_service.dart';
 import '../../services/smart_trip_energy_cost_service.dart';
 import '../garage/garage_screen.dart';
 import '../charging/charging_setup_screen.dart';
+import '../../services/navigation_launcher_service.dart';
+
+
+
 
 /// Screen / Bottom sheet displaying comprehensive Smart Charger Details
 /// including network, availability, power, connectors, pricing, EV compatibility,
@@ -730,20 +734,16 @@ class ChargerDetailsScreen extends StatelessWidget {
                   width: double.infinity,
                   height: 54,
                   child: OutlinedButton.icon(
-                    onPressed: () async {
-                      final success = await mapsProvider.launchExternalNavigation(marker);
-                      if (!success && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Navigation unavailable for this charger coordinates.',
-                              style: GoogleFonts.outfit(color: Colors.white),
-                            ),
-                            backgroundColor: AppColors.danger,
-                          ),
-                        );
-                      }
+                    onPressed: () {
+                      const NavigationLauncherService().openGoogleMapsNavigation(
+                        marker.latitude,
+                        marker.longitude,
+                        destinationName: marker.name,
+                        destinationId: marker.id,
+                        screenName: 'ChargerDetailsScreen',
+                      );
                     },
+
                     icon: const Icon(Icons.navigation_outlined, color: Colors.white, size: 22),
                     label: Text(
                       'NAVIGATE TO CHARGER',
