@@ -376,5 +376,59 @@ void main() {
       expect(find.text('START NAVIGATION'), findsOneWidget);
       expect(find.text('Open in Google Maps'), findsOneWidget);
     });
+
+    testWidgets('TEST Q: START NAVIGATION activates live in-app navigation mode without opening Google Maps', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'SRM University Kattankulathur, Chennai',
+        latitude: 12.8228,
+        longitude: 80.0439,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Chennai Airport',
+        latitude: 12.9939,
+        longitude: 80.1706,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+
+      provider.setSelectedVehicle(VehicleService.indianEVEcosystem.first);
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('START NAVIGATION'), findsOneWidget);
+
+      // Tap START NAVIGATION
+      await tester.tap(find.text('START NAVIGATION'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 900));
+
+      // 1. Verifies LIVE NAVIGATION active mode
+      expect(find.text('LIVE NAVIGATION'), findsWidgets);
+      expect(find.text('EXIT NAV'), findsOneWidget);
+
+      // 2. Request count remains 0 (Zero location permission asked)
+      expect(mapsService.requestCount, equals(0));
+
+      // 3. Test EXIT NAV returns to preview mode
+      await tester.tap(find.text('EXIT NAV'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('START NAVIGATION'), findsOneWidget);
+    });
   });
 }
