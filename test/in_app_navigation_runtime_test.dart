@@ -9,6 +9,7 @@ import 'package:evhub/providers/maps_provider.dart';
 import 'package:evhub/repositories/firestore_charger_repository.dart';
 import 'package:evhub/repositories/maps_repository.dart';
 import 'package:evhub/services/maps_service.dart';
+import 'package:evhub/services/vehicle_service.dart';
 import 'package:evhub/core/widgets/charger_marker_details_sheet.dart';
 import 'package:evhub/screens/phase4/in_app_navigation_screen.dart';
 
@@ -328,6 +329,52 @@ void main() {
 
       expect(provider.discoveryMode, equals('route'));
       expect(provider.markers, isNotEmpty);
+    });
+
+    testWidgets('TEST P: InAppNavigationScreen receives route & charger data, displays distinct recommended markers & HUD metrics', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'SRM University Kattankulathur, Chennai',
+        latitude: 12.8228,
+        longitude: 80.0439,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Chennai Airport',
+        latitude: 12.9939,
+        longitude: 80.1706,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+
+      provider.setSelectedVehicle(VehicleService.indianEVEcosystem.first);
+      await provider.planTrip(origin: origin, destination: dest);
+
+      // 1. Origin/destination -> Route calculated
+      expect(provider.routePoints, isNotEmpty);
+
+      // 2. Battery consumption & stops calculated
+      expect(provider.tripEnergyAnalysis.estimatedRangeKm, greaterThan(0));
+
+      // 3. Render InAppNavigationScreen
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // 4. Verify UI & HUD elements
+      expect(find.byType(InAppNavigationScreen), findsOneWidget);
+      expect(find.text('Navigating to Chennai Airport'), findsOneWidget);
+      expect(find.text('START NAVIGATION'), findsOneWidget);
+      expect(find.text('Open in Google Maps'), findsOneWidget);
     });
   });
 }

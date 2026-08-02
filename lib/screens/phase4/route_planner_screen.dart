@@ -517,6 +517,18 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
       if (!mounted) return;
       await mp.planTrip(origin: _selectedOrigin!, destination: _selectedDestination!);
+
+      if (mounted && mp.routePoints.isNotEmpty) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => InAppNavigationScreen(
+              origin: _selectedOrigin!,
+              destination: _selectedDestination!,
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isPlanningTrip = false);
     }

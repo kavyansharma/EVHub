@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
+import '../../core/widgets/charger_marker_details_sheet.dart';
 import '../../models/location_search_result.dart';
 import '../../providers/maps_provider.dart';
 
@@ -103,6 +104,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
 
   Set<Marker> _buildNavigationMarkers(MapsProvider mp) {
     final markers = <Marker>{};
+    final recommendedIds = mp.recommendedStops.map((s) => s.charger.id).toSet();
 
     // Origin marker
     markers.add(
@@ -127,19 +129,33 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       ),
     );
 
-    // Recommended charger markers
-    for (final stop in mp.recommendedStops) {
+    // All corridor chargers (with recommended chargers visually distinct)
+    final corridorChargers = mp.getFilteredMarkers();
+    for (final c in corridorChargers) {
+      final isRec = recommendedIds.contains(c.id);
+      final recStop = isRec ? mp.recommendedStops.firstWhere((s) => s.charger.id == c.id) : null;
+
       markers.add(
         Marker(
-          markerId: MarkerId('nav_stop_${stop.charger.id}'),
-          position: LatLng(stop.charger.latitude, stop.charger.longitude),
+          markerId: MarkerId('nav_charger_${c.id}'),
+          position: LatLng(c.latitude, c.longitude),
           infoWindow: InfoWindow(
-            title: 'Stop ${stop.stopIndex}: ${stop.charger.title}',
-            snippet: '${stop.charger.power} • Charge to ${stop.recommendedChargingTargetPct.toStringAsFixed(0)}%',
+            title: isRec ? '⭐ Recommended Stop ${recStop?.stopIndex}: ${c.title}' : c.title,
+            snippet: isRec
+                ? '${c.networkName} • ${c.displayPower} • Target ${recStop?.recommendedChargingTargetPct.toStringAsFixed(0)}%'
+                : '${c.networkName} • ${c.displayPower} • ${c.computedStatus.name.toUpperCase()}',
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            isRec ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueCyan,
+          ),
           onTap: () {
-            mp.setSelectedMarker(stop.charger);
+            mp.setSelectedMarker(c);
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => ChargerMarkerDetailsSheet(charger: c),
+            );
           },
         ),
       );
@@ -173,6 +189,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
 
     final distanceDisplay = mp.routeDistance ?? '${smartResult?.tripDistanceKm.toStringAsFixed(1) ?? "0"} km';
     final durationDisplay = mp.routeDuration ?? 'Route Preview';
+    final batteryUsedDisplay = '${mp.tripEnergyAnalysis.tripEnergyRequiredKwh.toStringAsFixed(1)} kWh';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -249,18 +266,27 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (widget.destination.subtitle != null && widget.destination.subtitle!.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                widget.destination.subtitle!,
-                                style: GoogleFonts.outfit(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            const SizedBox(height: 6),
+                            // Top Summary Bar: Distance | ETA | Battery Used | Charging Stops
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            ],
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  _buildTopNavMetric('Distance', distanceDisplay),
+                                  Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
+                                  _buildTopNavMetric('ETA', durationDisplay),
+                                  Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
+                                  _buildTopNavMetric('Battery Used', batteryUsedDisplay),
+                                  Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
+                                  _buildTopNavMetric('Stops', '${stops.length} Stop${stops.length == 1 ? "" : "s"}'),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -433,86 +459,69 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Corridor Metrics Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildNavMetric(
-                        label: 'Distance',
-                        value: distanceDisplay,
-                        icon: Icons.straighten,
-                        color: const Color(0xFF3B82F6),
-                      ),
-                      _buildNavMetric(
-                        label: 'ETA / Time',
-                        value: durationDisplay,
-                        icon: Icons.schedule,
-                        color: const Color(0xFFF59E0B),
-                      ),
-                      _buildNavMetric(
-                        label: 'Battery Dest.',
-                        value: '${smartResult?.estimatedBatteryAtDestinationPct.clamp(0, 100).toStringAsFixed(0) ?? 0}%',
-                        icon: Icons.battery_charging_full,
-                        color: const Color(0xFF10B981),
-                      ),
-                      _buildNavMetric(
-                        label: 'Stops',
-                        value: '${stops.length}',
-                        icon: Icons.ev_station,
-                        color: const Color(0xFF10B981),
-                      ),
-                    ],
-                  ),
-
-                  // Next Charging Stop Card (if stops exist)
-                  if (stops.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withOpacity(0.2),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.bolt, color: Color(0xFF10B981), size: 20),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Next Stop: ${stops.first.charger.title}',
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  '${stops.first.distanceFromStartKm.toStringAsFixed(0)} km from start • Charge to ${stops.first.recommendedChargingTargetPct.toStringAsFixed(0)}% (~${stops.first.estimatedChargingDurationMinutesInt} min)',
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white70,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                  // Next Charging Stop Card (Next Stop | Distance to Stop | Expected Battery at Arrival | Recommended Charge)
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: stops.isNotEmpty ? const Color(0xFF10B981).withOpacity(0.4) : const Color(0xFF3B82F6).withOpacity(0.4),
                       ),
                     ),
-                  ],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              stops.isNotEmpty ? Icons.bolt : Icons.check_circle_outline,
+                              color: stops.isNotEmpty ? const Color(0xFF10B981) : const Color(0xFF3B82F6),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                stops.isNotEmpty ? 'Next Stop: ${stops.first.charger.title}' : 'Direct Trip — No Charging Required',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildStopSubMetric(
+                              label: 'Distance to Stop',
+                              value: stops.isNotEmpty ? '${stops.first.distanceFromStartKm.toStringAsFixed(1)} km' : distanceDisplay,
+                              color: const Color(0xFF3B82F6),
+                            ),
+                            _buildStopSubMetric(
+                              label: 'Battery at Arrival',
+                              value: stops.isNotEmpty
+                                  ? '${stops.first.estimatedArrivalBatteryPct.toStringAsFixed(0)}%'
+                                  : '${smartResult?.estimatedBatteryAtDestinationPct.clamp(0, 100).toStringAsFixed(0) ?? mp.currentBatteryPct.toInt()}%',
+                              color: const Color(0xFF10B981),
+                            ),
+                            _buildStopSubMetric(
+                              label: 'Recommended Charge',
+                              value: stops.isNotEmpty
+                                  ? 'Target ${stops.first.recommendedChargingTargetPct.toStringAsFixed(0)}% (~${stops.first.estimatedChargingDurationMinutesInt}m)'
+                                  : 'No Charge Needed',
+                              color: const Color(0xFFF59E0B),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
 
                   const SizedBox(height: 18),
 
@@ -590,31 +599,20 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     );
   }
 
-  Widget _buildNavMetric({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
+  Widget _buildTopNavMetric(String label, String value) {
     return Column(
       children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: GoogleFonts.outfit(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-        ),
-        Text(
-          label,
-          style: GoogleFonts.outfit(
-            color: Colors.grey,
-            fontSize: 10,
-          ),
-        ),
+        Text(value, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+        Text(label, style: GoogleFonts.outfit(color: Colors.grey, fontSize: 9)),
+      ],
+    );
+  }
+
+  Widget _buildStopSubMetric({required String label, required String value, required Color color}) {
+    return Column(
+      children: [
+        Text(value, style: GoogleFonts.outfit(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+        Text(label, style: GoogleFonts.outfit(color: Colors.grey, fontSize: 9)),
       ],
     );
   }
