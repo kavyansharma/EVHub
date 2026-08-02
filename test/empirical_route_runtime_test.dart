@@ -103,8 +103,8 @@ void main() {
     expect(corridorChargers.length, greaterThanOrEqualTo(1));
   });
 
-  test('Test B: SRM University, Chennai -> Chennai Airport', () async {
-    final originAddress = "SRM University, Chennai";
+  test('Test B: SRM University Kattankulathur, Chennai -> Chennai Airport', () async {
+    final originAddress = "SRM University Kattankulathur, Chennai";
     final destAddress = "Chennai Airport";
 
     final originCoords = await mapsService.getCoordinatesFromAddress(originAddress);
