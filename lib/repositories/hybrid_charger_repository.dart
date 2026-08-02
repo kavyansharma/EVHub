@@ -218,8 +218,15 @@ class HybridChargerRepository {
 
       final minDistanceKm = minDistanceMeters / 1000.0;
       if (minDistanceKm <= corridorRadiusKm) {
-        corridorChargers.add(charger.copyWith(distanceKm: minDistanceKm));
-        routeProgressMap[charger.id] = cumulativeDistKm[bestPointIndex];
+        final totalRouteKm = cumulativeDistKm.isNotEmpty ? cumulativeDistKm.last : 0.0;
+        final progKm = cumulativeDistKm[bestPointIndex];
+        final toDestKm = (totalRouteKm - progKm).clamp(0.0, double.infinity);
+        corridorChargers.add(charger.copyWith(
+          distanceKm: minDistanceKm,
+          routeDistanceFromOriginKm: progKm,
+          routeDistanceToDestKm: toDestKm,
+        ));
+        routeProgressMap[charger.id] = progKm;
       }
     }
 

@@ -29,6 +29,8 @@ class MapMarkerModel {
 
   // Phase 7.2 Enhancements
   final double? distanceKm;
+  final double? routeDistanceFromOriginKm;
+  final double? routeDistanceToDestKm;
   final String? availabilityStatus;
   final String? lastUpdated;
   final bool isVerified;
@@ -123,6 +125,8 @@ class MapMarkerModel {
     this.openingHours = '24 Hours',
     this.source = 'evhub_verified',
     this.distanceKm,
+    this.routeDistanceFromOriginKm,
+    this.routeDistanceToDestKm,
     this.availabilityStatus,
     this.lastUpdated,
     this.isVerified = true,
@@ -172,6 +176,8 @@ class MapMarkerModel {
     String? openingHours,
     String? source,
     double? distanceKm,
+    double? routeDistanceFromOriginKm,
+    double? routeDistanceToDestKm,
     String? availabilityStatus,
     String? lastUpdated,
     bool? isVerified,
@@ -220,6 +226,8 @@ class MapMarkerModel {
       openingHours: openingHours ?? this.openingHours,
       source: source ?? this.source,
       distanceKm: distanceKm ?? this.distanceKm,
+      routeDistanceFromOriginKm: routeDistanceFromOriginKm ?? this.routeDistanceFromOriginKm,
+      routeDistanceToDestKm: routeDistanceToDestKm ?? this.routeDistanceToDestKm,
       availabilityStatus: availabilityStatus ?? this.availabilityStatus,
       lastUpdated: lastUpdated ?? this.lastUpdated,
       isVerified: isVerified ?? this.isVerified,

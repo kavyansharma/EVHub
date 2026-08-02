@@ -1688,14 +1688,26 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                         child: Text('REC', style: GoogleFonts.outfit(color: _kBlue, fontSize: 9, fontWeight: FontWeight.bold)),
                       ),
                   ]),
-                  const SizedBox(height: 4),
-                  Text('${charger.network} • ${charger.power} (${charger.powerType})',
-                      style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
                   const SizedBox(height: 2),
+                  Text(charger.displayAddress,
+                      style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 3),
+                  Text('${charger.networkName} • ${charger.displayPower} (${charger.powerType}) • ${charger.pricePerKwh}',
+                      style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11)),
+                  const SizedBox(height: 3),
                   Text(
-                    '${charger.connectors.join(", ")} • '
-                    '${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km from route" : "On route"}',
-                    style: GoogleFonts.outfit(color: Colors.white54, fontSize: 11),
+                    '${charger.displayConnectors} • ${charger.computedStatus.name.toUpperCase()}',
+                    style: GoogleFonts.outfit(
+                      color: charger.computedStatus == MarkerStatus.available ? _kGreen : _kOrange,
+                      fontSize: 11, fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'From start: ${charger.routeDistanceFromOriginKm?.toStringAsFixed(1) ?? "0"} km • '
+                    'To dest: ${charger.routeDistanceToDestKm?.toStringAsFixed(1) ?? "0"} km',
+                    style: GoogleFonts.outfit(color: _kBlue, fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ])),
                 IconButton(
