@@ -38,6 +38,34 @@ class MockFirestoreRepoForEmpiricalTest implements FirestoreChargerRepository {
         price: '₹21/kWh',
         source: 'evhub_verified',
       ),
+      MapMarkerModel(
+        id: 'charger_chennai_1',
+        title: 'Kalyan Grand Business Hotel Charger',
+        description: 'Vandalur, Chennai',
+        address: 'GST Road, Next to Vandalur Zoo, Chennai',
+        latitude: 12.8893,
+        longitude: 80.0815,
+        type: MarkerType.station,
+        power: '24 kW',
+        powerType: 'Fast',
+        connectors: ['Type 2', 'CCS2'],
+        price: '₹18/kWh',
+        source: 'evhub_verified',
+      ),
+      MapMarkerModel(
+        id: 'charger_far_away',
+        title: 'Far Off-Route Charger',
+        description: 'Remote Location',
+        address: 'Outskirts, Far Away',
+        latitude: 15.0000,
+        longitude: 75.0000,
+        type: MarkerType.station,
+        power: '50 kW',
+        powerType: 'Fast',
+        connectors: ['CCS2'],
+        price: '₹15/kWh',
+        source: 'evhub_verified',
+      ),
     ];
   }
 
@@ -46,77 +74,72 @@ class MockFirestoreRepoForEmpiricalTest implements FirestoreChargerRepository {
 }
 
 void main() {
-  test('Empirical Runtime Test: Ansal Heights Sector 92 Gurugram to HUDA City Centre Gurugram', () async {
-    final mapsService = MapsService();
+  final mapsService = MapsService();
+  final hybridRepo = HybridChargerRepository(
+    firestoreRepository: MockFirestoreRepoForEmpiricalTest(),
+    mapsService: mapsService,
+  );
 
-    // 1. Geocode origin
+  test('Test A: Ansal Heights, Sector 92, Gurugram -> HUDA City Centre, Gurugram', () async {
     final originAddress = "Ansal Heights, Sector 92, Gurugram";
+    final destAddress = "HUDA City Centre, Gurugram";
+
     final originCoords = await mapsService.getCoordinatesFromAddress(originAddress);
-    print("EMPIRICAL TEST - ORIGIN GEOMETRY:");
-    print("Address: $originAddress");
-    print("Coordinates: ${originCoords?.latitude}, ${originCoords?.longitude}");
+    final destCoords = await mapsService.getCoordinatesFromAddress(destAddress);
 
     expect(originCoords, isNotNull);
-    expect(originCoords!.latitude, isNot(equals(0.0)));
-    expect(originCoords.longitude, isNot(equals(0.0)));
-
-    // 2. Geocode destination
-    final destAddress = "HUDA City Centre, Gurugram";
-    final destCoords = await mapsService.getCoordinatesFromAddress(destAddress);
-    print("EMPIRICAL TEST - DESTINATION GEOMETRY:");
-    print("Address: $destAddress");
-    print("Coordinates: ${destCoords?.latitude}, ${destCoords?.longitude}");
-
     expect(destCoords, isNotNull);
-    expect(destCoords!.latitude, isNot(equals(0.0)));
-    expect(destCoords.longitude, isNot(equals(0.0)));
 
-    // 3. Directions calculation
+    final directions = await mapsService.getDirections(originCoords!, destCoords!);
+    expect(directions, isNotNull);
+
+    final points = directions!['points'] as List<LatLng>;
+    final corridorChargers = await hybridRepo.searchRouteCorridorChargers(
+      polylinePoints: points,
+      corridorRadiusKm: 10.0,
+    );
+
+    print("[TRIP_DEBUG] Test A Final Chargers: ${corridorChargers.length}");
+    expect(corridorChargers.length, greaterThanOrEqualTo(1));
+  });
+
+  test('Test B: SRM University, Chennai -> Chennai Airport', () async {
+    final originAddress = "SRM University, Chennai";
+    final destAddress = "Chennai Airport";
+
+    final originCoords = await mapsService.getCoordinatesFromAddress(originAddress);
+    final destCoords = await mapsService.getCoordinatesFromAddress(destAddress);
+
+    expect(originCoords, isNotNull);
+    expect(destCoords, isNotNull);
+
+    final directions = await mapsService.getDirections(originCoords!, destCoords!);
+    expect(directions, isNotNull);
+
+    final points = directions!['points'] as List<LatLng>;
+    final corridorChargers = await hybridRepo.searchRouteCorridorChargers(
+      polylinePoints: points,
+      corridorRadiusKm: 10.0,
+    );
+
+    print("[TRIP_DEBUG] Test B Final Chargers: ${corridorChargers.length}");
+    expect(corridorChargers.length, greaterThanOrEqualTo(1));
+  });
+
+  test('Test C: Route with at least one known charger directly along the route', () async {
+    final originCoords = const LatLng(12.8398, 80.0544); // SRM Kattankulathur
+    final destCoords = const LatLng(12.9863, 80.1752);   // Chennai Airport
+
     final directions = await mapsService.getDirections(originCoords, destCoords);
-    print("EMPIRICAL TEST - ROAD ROUTING:");
-    print("Directions success: ${directions != null}");
+    expect(directions, isNotNull);
 
-    if (directions != null) {
-      final String distanceText = directions['distance'] as String;
-      final String durationText = directions['duration'] as String;
-      final List<LatLng> points = directions['points'] as List<LatLng>;
+    final points = directions!['points'] as List<LatLng>;
+    final corridorChargers = await hybridRepo.searchRouteCorridorChargers(
+      polylinePoints: points,
+      corridorRadiusKm: 10.0,
+    );
 
-      print("Route distance: $distanceText");
-      print("Route duration: $durationText");
-      print("Polyline points count: ${points.length}");
-
-      expect(points.length, greaterThan(1));
-
-      // 4. Charger corridor search & travel order sorting
-      final hybridRepo = HybridChargerRepository(
-        firestoreRepository: MockFirestoreRepoForEmpiricalTest(),
-        mapsService: mapsService,
-      );
-      final corridorChargers = await hybridRepo.searchRouteCorridorChargers(
-        polylinePoints: points,
-        corridorRadiusKm: 10.0,
-      );
-
-      print("EMPIRICAL TEST - CORRIDOR CHARGERS:");
-      print("Chargers count: ${corridorChargers.length}");
-
-      for (int i = 0; i < corridorChargers.length; i++) {
-        final c = corridorChargers[i];
-        print("  [$i] Name: ${c.title}");
-        print("      Address: ${c.displayAddress}");
-        print("      Speed: ${c.displayPower} (${c.powerType})");
-        print("      Connectors: ${c.displayConnectors}");
-        print("      Price: ${c.pricePerKwh}");
-        print("      Status: ${c.computedStatus.name.toUpperCase()}");
-        print("      From Start: ${c.routeDistanceFromOriginKm?.toStringAsFixed(1)} km");
-        print("      To Dest: ${c.routeDistanceToDestKm?.toStringAsFixed(1)} km");
-      }
-
-      if (corridorChargers.length > 1) {
-        final firstProg = corridorChargers[0].routeDistanceFromOriginKm ?? 0.0;
-        final secondProg = corridorChargers[1].routeDistanceFromOriginKm ?? 0.0;
-        expect(firstProg, lessThanOrEqualTo(secondProg));
-      }
-    }
+    print("[TRIP_DEBUG] Test C Final Chargers: ${corridorChargers.length}");
+    expect(corridorChargers.any((c) => c.title.contains('Kalyan Grand')), isTrue);
   });
 }

@@ -804,15 +804,19 @@ class MapsProvider extends ChangeNotifier {
         final rawDocs = await _firestoreChargerRepository.getPublicVerifiedChargers();
         final validCoordsDocs = rawDocs.where((c) => c.hasValidCoordinates).toList();
 
-        final accepted = _markers.length;
+        final accepted = routeChargers.length;
         final rejected = validCoordsDocs.length - accepted;
 
-        debugPrint(
-          '[TRIP_DEBUG] Charger search radius: ${usedRadius}km\n'
-          '[TRIP_DEBUG] Chargers found: ${routeChargers.length}\n'
-          '[TRIP_DEBUG] Chargers accepted along route: $accepted\n'
-          '[TRIP_DEBUG] Chargers rejected: $rejected'
-        );
+        debugPrint('[TRIP_DEBUG] Origin coordinates: (${origin.latitude.toStringAsFixed(4)}, ${origin.longitude.toStringAsFixed(4)})');
+        debugPrint('[TRIP_DEBUG] Destination coordinates: (${dest.latitude.toStringAsFixed(4)}, ${dest.longitude.toStringAsFixed(4)})');
+        debugPrint('[TRIP_DEBUG] Route distance: $_routeDistance');
+        debugPrint('[TRIP_DEBUG] Route duration: $_routeDuration');
+        debugPrint('[TRIP_DEBUG] Route polyline points: ${_routePoints.length}');
+        debugPrint('[TRIP_DEBUG] Chargers fetched: ${rawDocs.length}');
+        debugPrint('[TRIP_DEBUG] Valid chargers: ${validCoordsDocs.length}');
+        debugPrint('[TRIP_DEBUG] Chargers within corridor: ${routeChargers.length}');
+        debugPrint('[TRIP_DEBUG] Chargers rejected: $rejected');
+        debugPrint('[TRIP_DEBUG] Final chargers: ${routeChargers.length}');
 
         debugPrint(
           '[MAP-DIAGNOSTIC]\n'

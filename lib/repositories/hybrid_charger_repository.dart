@@ -175,7 +175,7 @@ class HybridChargerRepository {
 
   /// Mode 3: Route Chargers Engine
   /// Fetches all Firestore chargers and filters chargers located within [corridorRadiusKm] (default 10.0 km)
-  /// of any point along the route [polylinePoints].
+  /// of any route segment [polylinePoints] using orthogonal point-to-segment projection.
   /// Deduplicates chargers and sorts them in direction of travel (origin -> destination progress).
   Future<List<MapMarkerModel>> searchRouteCorridorChargers({
     required List<LatLng> polylinePoints,
@@ -191,42 +191,92 @@ class HybridChargerRepository {
       final segM = Geolocator.distanceBetween(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
       cumulativeDistKm[i] = cumulativeDistKm[i - 1] + (segM / 1000.0);
     }
+    final totalRouteKm = cumulativeDistKm.isNotEmpty ? cumulativeDistKm.last : 0.0;
 
     final List<MapMarkerModel> allChargers = await _firestoreRepository.getPublicVerifiedChargers();
     final List<MapMarkerModel> corridorChargers = [];
     final Map<String, double> routeProgressMap = {};
 
     for (final charger in allChargers) {
-      if (!charger.hasValidCoordinates) continue;
+      if (!charger.hasValidCoordinates) {
+        debugPrint(
+          '[TRIP_DEBUG] REJECTED CHARGER:\n'
+          '  Charger name: ${charger.name}\n'
+          '  Charger coordinates: (${charger.latitude}, ${charger.longitude})\n'
+          '  Minimum distance to route: N/A\n'
+          '  Rejection reason: Invalid coordinates',
+        );
+        continue;
+      }
 
       double minDistanceMeters = double.infinity;
-      int bestPointIndex = 0;
+      double bestProgressKm = 0.0;
 
-      for (int i = 0; i < polylinePoints.length; i++) {
-        final pt = polylinePoints[i];
-        final distM = Geolocator.distanceBetween(
-          pt.latitude,
-          pt.longitude,
+      if (polylinePoints.length == 1) {
+        minDistanceMeters = Geolocator.distanceBetween(
+          polylinePoints.first.latitude,
+          polylinePoints.first.longitude,
           charger.latitude,
           charger.longitude,
         );
-        if (distM < minDistanceMeters) {
-          minDistanceMeters = distM;
-          bestPointIndex = i;
+        bestProgressKm = 0.0;
+      } else {
+        // Point-to-segment orthogonal projection across all polyline segments
+        for (int i = 0; i < polylinePoints.length - 1; i++) {
+          final pA = polylinePoints[i];
+          final pB = polylinePoints[i + 1];
+
+          final dLat = pB.latitude - pA.latitude;
+          final dLng = pB.longitude - pA.longitude;
+          final l2 = dLat * dLat + dLng * dLng;
+
+          double t = 0.0;
+          if (l2 > 0) {
+            t = ((charger.latitude - pA.latitude) * dLat + (charger.longitude - pA.longitude) * dLng) / l2;
+            t = t.clamp(0.0, 1.0);
+          }
+
+          final projLat = pA.latitude + t * dLat;
+          final projLng = pA.longitude + t * dLng;
+
+          final distM = Geolocator.distanceBetween(projLat, projLng, charger.latitude, charger.longitude);
+          if (distM < minDistanceMeters) {
+            minDistanceMeters = distM;
+            final segLenKm = cumulativeDistKm[i + 1] - cumulativeDistKm[i];
+            bestProgressKm = cumulativeDistKm[i] + (t * segLenKm);
+          }
         }
       }
 
       final minDistanceKm = minDistanceMeters / 1000.0;
       if (minDistanceKm <= corridorRadiusKm) {
-        final totalRouteKm = cumulativeDistKm.isNotEmpty ? cumulativeDistKm.last : 0.0;
-        final progKm = cumulativeDistKm[bestPointIndex];
-        final toDestKm = (totalRouteKm - progKm).clamp(0.0, double.infinity);
-        corridorChargers.add(charger.copyWith(
+        final toDestKm = (totalRouteKm - bestProgressKm).clamp(0.0, double.infinity);
+        final progressPct = (totalRouteKm > 0) ? (bestProgressKm / totalRouteKm) * 100.0 : 0.0;
+
+        final updated = charger.copyWith(
           distanceKm: minDistanceKm,
-          routeDistanceFromOriginKm: progKm,
+          routeDistanceFromOriginKm: bestProgressKm,
           routeDistanceToDestKm: toDestKm,
-        ));
-        routeProgressMap[charger.id] = progKm;
+        );
+        corridorChargers.add(updated);
+        routeProgressMap[charger.id] = bestProgressKm;
+
+        debugPrint(
+          '[TRIP_DEBUG] ACCEPTED CHARGER:\n'
+          '  Charger name: ${charger.name}\n'
+          '  Distance from origin: ${bestProgressKm.toStringAsFixed(1)} km\n'
+          '  Distance to destination: ${toDestKm.toStringAsFixed(1)} km\n'
+          '  Distance from route: ${minDistanceKm.toStringAsFixed(2)} km\n'
+          '  Progress percentage: ${progressPct.toStringAsFixed(1)}%',
+        );
+      } else {
+        debugPrint(
+          '[TRIP_DEBUG] REJECTED CHARGER:\n'
+          '  Charger name: ${charger.name}\n'
+          '  Charger coordinates: (${charger.latitude.toStringAsFixed(4)}, ${charger.longitude.toStringAsFixed(4)})\n'
+          '  Minimum distance to route: ${minDistanceKm.toStringAsFixed(2)} km\n'
+          '  Rejection reason: Distance (${minDistanceKm.toStringAsFixed(2)} km) exceeds corridor threshold (${corridorRadiusKm.toStringAsFixed(1)} km)',
+        );
       }
     }
 
