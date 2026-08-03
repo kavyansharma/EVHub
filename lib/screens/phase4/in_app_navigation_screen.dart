@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -33,6 +34,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
   int _activeStopIndex = 0;
   bool _isTripCompleted = false;
   bool _isChargingActive = false;
+  double _chargedBatteryBoostPct = 0.0;
 
   @override
   void initState() {
@@ -86,6 +88,35 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     }
   }
 
+  double _haversineKm(LatLng a, LatLng b) {
+    const p = 0.017453292519943295;
+    final aLat = a.latitude * p;
+    final bLat = b.latitude * p;
+    final dLat = (b.latitude - a.latitude) * p;
+    final dLng = (b.longitude - a.longitude) * p;
+    final val = 0.5 - math.cos(dLat) / 2 + math.cos(aLat) * math.cos(bLat) * (1 - math.cos(dLng)) / 2;
+    return 12742 * math.asin(math.sqrt(val));
+  }
+
+  double _calculateTotalPolylineDistanceKm(List<LatLng> points) {
+    if (points.length < 2) return 0.0;
+    double dist = 0.0;
+    for (int i = 0; i < points.length - 1; i++) {
+      dist += _haversineKm(points[i], points[i + 1]);
+    }
+    return dist;
+  }
+
+  double _calculateCoveredPolylineDistanceKm(List<LatLng> points, int currentIndex) {
+    if (points.length < 2 || currentIndex <= 0) return 0.0;
+    double dist = 0.0;
+    final limit = math.min(currentIndex, points.length - 1);
+    for (int i = 0; i < limit; i++) {
+      dist += _haversineKm(points[i], points[i + 1]);
+    }
+    return dist;
+  }
+
   void _startActiveNavigation(MapsProvider mp) {
     if (mp.routePoints.isEmpty) {
       _showSnackbar('No route points available to navigate.');
@@ -98,12 +129,15 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       _activeStopIndex = 0;
       _isTripCompleted = false;
       _isChargingActive = false;
+      _chargedBatteryBoostPct = 0.0;
     });
 
     _simulationTimer?.cancel();
 
-    // Route simulation timer — advances 1 polyline point per 800ms
-    _simulationTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+    // Start in-app navigation progress:
+    // If live GPS location is available and permission is granted, track position.
+    // If live location is unavailable or permission is not granted, run route simulation along decoded polyline without prompting for permissions.
+    _simulationTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -117,7 +151,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
         final currentPos = mp.routePoints[_currentRouteIndex];
         _mapController?.animateCamera(
           CameraUpdate.newCameraPosition(
-            CameraPosition(target: currentPos, zoom: 15.0),
+            CameraPosition(target: currentPos, zoom: 15.5),
           ),
         );
       } else {
@@ -138,6 +172,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       _currentRouteIndex = 0;
       _isTripCompleted = false;
       _isChargingActive = false;
+      _chargedBatteryBoostPct = 0.0;
     });
     _fitMapBounds();
     _showSnackbar('Exited active navigation.');
@@ -189,9 +224,18 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
               currentStop.charger.title,
               style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
             ),
+            const SizedBox(height: 4),
             Text(
-              '${currentStop.charger.network} • ${currentStop.charger.power}',
+              'Network: ${currentStop.charger.networkName}',
               style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+            ),
+            Text(
+              'Power: ${currentStop.charger.displayPower} • Connectors: ${currentStop.charger.connectors.join(", ")}',
+              style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+            ),
+            Text(
+              'Status: ${currentStop.charger.computedStatus.name.toUpperCase()}',
+              style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontSize: 12, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             const LinearProgressIndicator(
@@ -215,6 +259,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
               Navigator.pop(ctx);
               setState(() {
                 _isChargingActive = false;
+                _chargedBatteryBoostPct += currentStop.batteryGainPct;
                 _activeStopIndex++;
               });
               _showSnackbar('Charging session complete! Resuming navigation.');
@@ -256,15 +301,59 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     );
   }
 
-  String _getManeuverInstruction(MapsProvider mp) {
-    if (mp.routePoints.isEmpty) return 'Proceed to route';
-    final totalPoints = mp.routePoints.length;
-    final progress = _currentRouteIndex / (totalPoints > 1 ? totalPoints - 1 : 1);
-    if (progress < 0.25) return 'Head north-east on highway corridor';
-    if (progress < 0.50) return 'Continue straight along EV route';
-    if (progress < 0.80) return 'Follow charging corridor toward destination';
-    if (progress < 0.95) return 'Merge onto destination approach road';
-    return 'Arriving at destination on the left';
+  String _getManeuverInstruction(MapsProvider mp, double distanceToStop, double remainingDistance) {
+    final stops = mp.recommendedStops;
+    final activeStop = stops.length > _activeStopIndex ? stops[_activeStopIndex] : null;
+
+    if (activeStop != null) {
+      if (distanceToStop > 0.5) {
+        return 'Follow charging corridor toward ${activeStop.charger.title}';
+      } else {
+        return 'Prepare to turn into ${activeStop.charger.title}';
+      }
+    } else {
+      final totalPoints = mp.routePoints.length;
+      final progress = _currentRouteIndex / (totalPoints > 1 ? totalPoints - 1 : 1);
+      if (progress < 0.25) return 'Head out on primary route toward ${widget.destination.displayName}';
+      if (progress < 0.75) return 'Continue straight on EV navigation route';
+      if (progress < 0.95) return 'Merge onto destination approach road';
+      return 'Arriving at ${widget.destination.displayName} on the left';
+    }
+  }
+
+  String _getDistanceToManeuver(double distanceToStop, double remainingDistance, bool hasActiveStop) {
+    final targetDist = hasActiveStop ? distanceToStop : remainingDistance;
+    if (targetDist < 0.5) {
+      final meters = (targetDist * 1000).round();
+      return '$meters m';
+    }
+    return '${targetDist.toStringAsFixed(1)} km';
+  }
+
+  int _parseDurationToMinutes(String? durationStr) {
+    if (durationStr == null || durationStr.isEmpty) return 30;
+    int totalMins = 0;
+    final hrMatch = RegExp(r'(\d+)\s*hr').firstMatch(durationStr);
+    final minMatch = RegExp(r'(\d+)\s*min').firstMatch(durationStr);
+    if (hrMatch != null) {
+      totalMins += (int.tryParse(hrMatch.group(1)!) ?? 0) * 60;
+    }
+    if (minMatch != null) {
+      totalMins += (int.tryParse(minMatch.group(1)!) ?? 0);
+    }
+    if (totalMins == 0) {
+      final digits = RegExp(r'(\d+)').firstMatch(durationStr);
+      if (digits != null) totalMins = int.tryParse(digits.group(1)!) ?? 30;
+    }
+    return totalMins > 0 ? totalMins : 30;
+  }
+
+  String _formatRemainingEta(int remainingMinutes) {
+    if (remainingMinutes <= 0) return 'Arrived';
+    if (remainingMinutes < 60) return '$remainingMinutes mins';
+    final hrs = remainingMinutes ~/ 60;
+    final mins = remainingMinutes % 60;
+    return mins > 0 ? '$hrs hr $mins min' : '$hrs hr';
   }
 
   Set<Marker> _buildNavigationMarkers(MapsProvider mp) {
@@ -366,16 +455,39 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       );
     }
 
-    final totalPoints = mp.routePoints.length;
-    final progressFraction = totalPoints > 1 ? (_currentRouteIndex / (totalPoints - 1)) : 0.0;
-    final totalDistanceKm = (double.tryParse(mp.routeDistance?.replaceAll(RegExp(r'[^0-9.]'), '') ?? '') ?? smartResult?.tripDistanceKm ?? 20.0);
-    final remainingDistanceKm = totalDistanceKm * (1.0 - progressFraction);
-    final remainingDistanceDisplay = '${remainingDistanceKm.toStringAsFixed(1)} km';
+    final totalPolylineKm = _calculateTotalPolylineDistanceKm(mp.routePoints);
+    final totalDistanceKm = totalPolylineKm > 0
+        ? totalPolylineKm
+        : (double.tryParse(mp.routeDistance?.replaceAll(RegExp(r'[^0-9.]'), '') ?? '') ?? smartResult?.tripDistanceKm ?? 20.0);
 
-    final distanceDisplay = mp.routeDistance ?? '${smartResult?.tripDistanceKm.toStringAsFixed(1) ?? "0"} km';
-    final durationDisplay = mp.routeDuration ?? 'Route Preview';
-    final batteryUsedDisplay = '${mp.tripEnergyAnalysis.tripEnergyRequiredKwh.toStringAsFixed(1)} kWh';
-    final remainingBatteryPct = (mp.currentBatteryPct - (progressFraction * (smartResult?.tripEnergyRequiredKWh ?? 5.0) / (mp.selectedVehicle?.usableBatteryCapacity ?? 40.0) * 100.0)).clamp(0.0, 100.0);
+    final coveredDistanceKm = _calculateCoveredPolylineDistanceKm(mp.routePoints, _currentRouteIndex);
+    final progressFraction = totalDistanceKm > 0 ? (coveredDistanceKm / totalDistanceKm).clamp(0.0, 1.0) : 0.0;
+    final remainingDistanceKm = (totalDistanceKm - coveredDistanceKm).clamp(0.0, totalDistanceKm);
+    final remainingDistanceDisplay = '${remainingDistanceKm.toStringAsFixed(1)} km';
+    final totalDistanceDisplay = '${totalDistanceKm.toStringAsFixed(1)} km';
+
+    final totalDurationMinutes = _parseDurationToMinutes(mp.routeDuration);
+    final remainingMinutes = (totalDurationMinutes * (1.0 - progressFraction)).round();
+    final remainingEtaDisplay = _formatRemainingEta(remainingMinutes);
+    final totalDurationDisplay = mp.routeDuration ?? '$totalDurationMinutes mins';
+
+    final startingBatteryPct = mp.currentBatteryPct;
+    final totalEnergyNeededKwh = mp.tripEnergyAnalysis.tripEnergyRequiredKwh;
+    final usableCapacityKwh = mp.selectedVehicle?.usableBatteryCapacity ?? 40.0;
+    final totalPctUsed = usableCapacityKwh > 0 ? (totalEnergyNeededKwh / usableCapacityKwh) * 100.0 : 20.0;
+
+    final currentBatteryPct = (startingBatteryPct - (progressFraction * totalPctUsed) + _chargedBatteryBoostPct).clamp(0.0, 100.0);
+    final batteryUsedDisplay = '${totalEnergyNeededKwh.toStringAsFixed(1)} kWh';
+
+    final distanceToStopKm = activeStop != null
+        ? (activeStop.distanceFromStartKm - coveredDistanceKm).clamp(0.0, totalDistanceKm)
+        : 0.0;
+
+    final expectedBatteryAtStopPct = activeStop != null
+        ? (startingBatteryPct - ((activeStop.distanceFromStartKm / (totalDistanceKm > 0 ? totalDistanceKm : 1)) * totalPctUsed) + _chargedBatteryBoostPct).clamp(0.0, 100.0)
+        : 0.0;
+
+    final expectedBatteryAtDestPct = (startingBatteryPct - totalPctUsed + _chargedBatteryBoostPct + stops.fold(0.0, (sum, s) => sum + s.batteryGainPct)).clamp(0.0, 100.0);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -453,7 +565,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 6),
-                            // Top Maneuver Instruction
+                            // Top Maneuver Area: Next maneuver | Distance to maneuver
                             if (_isNavigatingActive) ...[
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -467,15 +579,28 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                                     const Icon(Icons.navigation, color: Color(0xFF3B82F6), size: 16),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: Text(
-                                        _getManeuverInstruction(mp),
-                                        style: GoogleFonts.outfit(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _getManeuverInstruction(mp, distanceToStopKm, remainingDistanceKm),
+                                            style: GoogleFonts.outfit(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(
+                                            'Next maneuver in ${_getDistanceToManeuver(distanceToStopKm, remainingDistanceKm, activeStop != null)}',
+                                            style: GoogleFonts.outfit(
+                                              color: const Color(0xFF60A5FA),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
@@ -483,7 +608,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               ),
                               const SizedBox(height: 6),
                             ],
-                            // Top Summary Bar: Distance | ETA | Battery Used / Remaining
+                            // Navigation HUD: Remaining distance | ETA | Battery
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
@@ -493,13 +618,13 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                                 children: [
-                                  _buildTopNavMetric('Distance', _isNavigatingActive ? remainingDistanceDisplay : distanceDisplay),
+                                  _buildTopNavMetric('Distance', _isNavigatingActive ? remainingDistanceDisplay : totalDistanceDisplay),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
-                                  _buildTopNavMetric('ETA', durationDisplay),
+                                  _buildTopNavMetric('ETA', _isNavigatingActive ? remainingEtaDisplay : totalDurationDisplay),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
                                   _buildTopNavMetric(
                                     _isNavigatingActive ? 'Battery' : 'Battery Used',
-                                    _isNavigatingActive ? '${remainingBatteryPct.toStringAsFixed(0)}%' : batteryUsedDisplay,
+                                    _isNavigatingActive ? '${currentBatteryPct.toStringAsFixed(0)}%' : batteryUsedDisplay,
                                   ),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
                                   _buildTopNavMetric('Stops', '${stops.length - _activeStopIndex} Left'),
@@ -605,7 +730,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Next Charging Stop Card (Next Stop | Distance to Stop | Expected Battery at Arrival | Recommended Charge)
+                  // Next Charging Stop Card (Next Stop | Distance | Expected Arrival Battery | Recommended Charge)
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -640,26 +765,33 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             ),
                           ],
                         ),
+                        if (activeStop != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '${activeStop.charger.networkName} • ${activeStop.charger.displayPower} • ${activeStop.charger.computedStatus.name.toUpperCase()}',
+                            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             _buildStopSubMetric(
                               label: 'Distance to Stop',
-                              value: activeStop != null ? '${activeStop.distanceFromStartKm.toStringAsFixed(1)} km' : remainingDistanceDisplay,
+                              value: activeStop != null ? '${distanceToStopKm.toStringAsFixed(1)} km' : remainingDistanceDisplay,
                               color: const Color(0xFF3B82F6),
                             ),
                             _buildStopSubMetric(
                               label: 'Battery at Arrival',
                               value: activeStop != null
-                                  ? '${activeStop.estimatedArrivalBatteryPct.toStringAsFixed(0)}%'
-                                  : '${smartResult?.estimatedBatteryAtDestinationPct.clamp(0, 100).toStringAsFixed(0) ?? mp.currentBatteryPct.toInt()}%',
+                                  ? '${expectedBatteryAtStopPct.toStringAsFixed(0)}%'
+                                  : '${expectedBatteryAtDestPct.toStringAsFixed(0)}%',
                               color: const Color(0xFF10B981),
                             ),
                             _buildStopSubMetric(
                               label: 'Recommended Charge',
                               value: activeStop != null
-                                  ? 'Target ${activeStop.recommendedChargingTargetPct.toStringAsFixed(0)}% (~${activeStop.estimatedChargingDurationMinutesInt}m)'
+                                  ? 'Target ${activeStop.recommendedChargingTargetPct.toStringAsFixed(0)}%'
                                   : 'No Charge Needed',
                               color: const Color(0xFFF59E0B),
                             ),
@@ -705,7 +837,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
 
                   const SizedBox(height: 16),
 
-                  // START / LIVE NAVIGATION Action Controls
+                  // START NAVIGATION / LIVE NAVIGATION & EXIT NAVIGATION Controls
                   if (!_isNavigatingActive) ...[
                     SizedBox(
                       width: double.infinity,
@@ -822,69 +954,83 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
             Positioned.fill(
               child: Container(
                 color: Colors.black.withOpacity(0.75),
-                child: Center(child: GlassContainer(
-                  padding: const EdgeInsets.all(28),
-                  borderRadius: 24,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.emoji_events, color: Color(0xFF10B981), size: 56),
-                      const SizedBox(height: 14),
-                      Text(
-                        'Trip Completed! 🎉',
-                        style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'You arrived safely at ${widget.destination.displayName}',
-                        style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 18),
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(16),
+                child: Center(
+                  child: GlassContainer(
+                    padding: const EdgeInsets.all(28),
+                    borderRadius: 24,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.emoji_events, color: Color(0xFF10B981), size: 56),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Trip Completed! 🎉',
+                          style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
                         ),
-                        child: Column(
-                          children: [
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              Text('Total Distance', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
-                              Text(distanceDisplay, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ]),
-                            const SizedBox(height: 6),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              Text('Total Trip Time', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
-                              Text(durationDisplay, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ]),
-                            const SizedBox(height: 6),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              Text('Charging Stops Used', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
-                              Text('$_activeStopIndex Stops', style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 13)),
-                            ]),
-                            const SizedBox(height: 6),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                              Text('Estimated Arrival Battery', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
-                              Text('${smartResult?.estimatedBatteryAtDestinationPct.clamp(0, 100).toStringAsFixed(0) ?? 80}%', style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 13)),
-                            ]),
-                          ],
+                        const SizedBox(height: 6),
+                        Text(
+                          'You arrived safely at ${widget.destination.displayName}',
+                          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13),
+                          textAlign: TextAlign.center,
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        const SizedBox(height: 18),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Total Distance', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
+                                  Text(totalDistanceDisplay, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Total Trip Time', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
+                                  Text(totalDurationDisplay, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Charging Stops Used', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
+                                  Text('$_activeStopIndex Stops', style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 13)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Estimated Arrival Battery', style: GoogleFonts.outfit(color: Colors.grey, fontSize: 12)),
+                                  Text('${currentBatteryPct.toStringAsFixed(0)}%', style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 13)),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                        onPressed: _exitActiveNavigation,
-                        child: Text('DONE', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14)),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          onPressed: _exitActiveNavigation,
+                          child: Text('DONE', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14)),
+                        ),
+                      ],
+                    ),
                   ),
-                )),
+                ),
               ),
             ),
         ],

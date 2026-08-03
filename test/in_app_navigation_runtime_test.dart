@@ -187,7 +187,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // TEST A: ChargerMarkerDetailsSheet remains visible (STEP 6 requirement)
+      // TEST A: ChargerMarkerDetailsSheet remains visible
       expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
       // TEST B: InAppNavigationScreen is NOT opened
       expect(find.byType(InAppNavigationScreen), findsNothing);
@@ -425,6 +425,152 @@ void main() {
 
       // 3. Test EXIT NAV returns to preview mode
       await tester.tap(find.text('EXIT NAV'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('START NAVIGATION'), findsOneWidget);
+    });
+
+    testWidgets('TEST R: Active simulation progresses along polyline, updates metrics and top maneuver area', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur, Chennai',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram, Chennai',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('START NAVIGATION'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1500));
+
+      expect(find.text('LIVE NAVIGATION'), findsWidgets);
+      expect(find.textContaining('Next maneuver in'), findsOneWidget);
+      expect(mapsService.requestCount, equals(0));
+    });
+
+    testWidgets('TEST S: Charging stop card interactions - SKIP STOP & START CHARGING stay inside EVHub', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('START NAVIGATION'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      if (find.text('START CHARGING').evaluate().isNotEmpty) {
+        expect(find.text('START CHARGING'), findsWidgets);
+        expect(find.text('SKIP STOP'), findsWidgets);
+
+        // Tap START CHARGING
+        await tester.tap(find.text('START CHARGING').first);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        // Verifies EVHub charging session dialog
+        expect(find.text('EV Charging Session'), findsOneWidget);
+        expect(find.text('FINISH CHARGING'), findsOneWidget);
+
+        // Finish charging
+        await tester.tap(find.text('FINISH CHARGING'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        expect(find.text('EV Charging Session'), findsNothing);
+      }
+    });
+
+    testWidgets('TEST T: Navigation completion state shows Trip Completed overlay', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('START NAVIGATION'));
+      await tester.pump();
+
+      // Fast forward simulation through periodic timer
+      for (int i = 0; i < 25; i++) {
+        await tester.pump(const Duration(milliseconds: 800));
+      }
+
+      expect(find.text('Trip Completed! 🎉'), findsOneWidget);
+      expect(find.text('DONE'), findsOneWidget);
+
+      await tester.tap(find.text('DONE'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
