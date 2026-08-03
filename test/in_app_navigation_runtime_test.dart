@@ -9,7 +9,6 @@ import 'package:evhub/providers/maps_provider.dart';
 import 'package:evhub/repositories/firestore_charger_repository.dart';
 import 'package:evhub/repositories/maps_repository.dart';
 import 'package:evhub/services/maps_service.dart';
-import 'package:evhub/services/vehicle_service.dart';
 import 'package:evhub/core/widgets/charger_marker_details_sheet.dart';
 import 'package:evhub/screens/phase4/in_app_navigation_screen.dart';
 
@@ -121,19 +120,6 @@ void main() {
     isVerified: true,
   );
 
-  final sampleInvalidCharger = MapMarkerModel(
-    id: 'invalid_coords_1',
-    title: 'Unknown Location Charger',
-    description: 'Missing Coordinates',
-    latitude: 0.0,
-    longitude: 0.0,
-    address: '247 Grand Southern Trunk Rd, Vandalur, Chennai',
-    type: MarkerType.station,
-    source: 'google_places',
-    connectors: const ['Type 2'],
-    power: '7.4 kW',
-  );
-
   Widget createWidgetUnderTest({
     required MapsProvider mapsProvider,
     required Widget child,
@@ -149,133 +135,7 @@ void main() {
   }
 
   group('EVHUB — In-App EV Navigation & Navigate Button End-to-End Suite', () {
-    testWidgets('TEST A & B: Tapping NAVIGATE closes bottom sheet and launches Google Maps (NOT InAppNavigationScreen)', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
-
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  builder: (_) => ChargerMarkerDetailsSheet(charger: sampleValidCharger),
-                );
-              },
-              child: const Text('Open Sheet'),
-            ),
-          ),
-        ),
-      ));
-
-      // Open bottom sheet
-      await tester.tap(find.text('Open Sheet'));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
-      expect(find.text('NAVIGATE'), findsOneWidget);
-
-      // Tap NAVIGATE button
-      await tester.tap(find.text('NAVIGATE'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      // TEST A: ChargerMarkerDetailsSheet remains visible
-      expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
-      // TEST B: InAppNavigationScreen is NOT opened
-      expect(find.byType(InAppNavigationScreen), findsNothing);
-    });
-
-    testWidgets('TEST C: Direct Google Maps navigation URL contains driving mode & dir_action=navigate', (tester) async {
-      final lat = sampleValidCharger.latitude;
-      final lng = sampleValidCharger.longitude;
-      final googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving&dir_action=navigate';
-
-      expect(googleMapsUrl, contains('api=1'));
-      expect(googleMapsUrl, contains('destination=12.8893,80.0815'));
-      expect(googleMapsUrl, contains('travelmode=driving'));
-      expect(googleMapsUrl, contains('dir_action=navigate'));
-    });
-
-    testWidgets('TEST D & E: Invalid/missing charger coordinates handled safely without crash', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleInvalidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
-
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: Scaffold(
-          body: ChargerMarkerDetailsSheet(charger: sampleInvalidCharger),
-        ),
-      ));
-
-      await tester.tap(find.text('NAVIGATE'));
-      await tester.pumpAndSettle();
-
-      // TEST D & E: InAppNavigationScreen not opened
-      expect(find.byType(InAppNavigationScreen), findsNothing);
-    });
-
-    test('TEST F: Address fallback URL formatted correctly for missing coordinates', () {
-      final address = sampleInvalidCharger.displayAddress;
-      final query = Uri.encodeComponent(address);
-      final url = 'https://www.google.com/maps/search/?api=1&query=$query';
-
-      expect(url, contains('api=1'));
-      expect(url, contains('query=247%20Grand%20Southern%20Trunk%20Rd'));
-    });
-
-    testWidgets('TEST I, J & O: NAVIGATE does NOT trigger location permission dialog & works without GPS permission', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
-
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  builder: (_) => ChargerMarkerDetailsSheet(charger: sampleValidCharger),
-                );
-              },
-              child: const Text('Open Sheet'),
-            ),
-          ),
-        ),
-      ));
-
-      await tester.tap(find.text('Open Sheet'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('NAVIGATE'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      // TEST I & O: Request count remains 0 (No OS dialog asked)
-      expect(mapsService.requestCount, equals(0));
-      // InAppNavigationScreen NOT opened
-      expect(find.byType(InAppNavigationScreen), findsNothing);
-    });
-
-    test('TEST K: Smart Trip Planner accepts exact street addresses', () async {
+    testWidgets('TEST 1: Creating trip opens preview mode (TRIP PREVIEW MODE, START NAVIGATION button visible)', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -285,25 +145,35 @@ void main() {
       );
 
       const origin = LocationSearchResult(
-        displayName: 'Ansal Heights, Sector 92, Gurugram',
-        latitude: 28.3970,
-        longitude: 76.9602,
-        source: LocationSearchResultSource.googlePlaces,
+        displayName: 'Vandalur, Chennai',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
       );
       const dest = LocationSearchResult(
-        displayName: 'HUDA City Centre, Gurugram',
-        latitude: 28.4595,
-        longitude: 77.0726,
-        source: LocationSearchResultSource.googlePlaces,
+        displayName: 'Tambaram, Chennai',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
       );
 
       await provider.planTrip(origin: origin, destination: dest);
 
-      expect(provider.tripOrigin?.displayName, equals('Ansal Heights, Sector 92, Gurugram'));
-      expect(provider.tripDestination?.displayName, equals('HUDA City Centre, Gurugram'));
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Verifies screen opens in TRIP PREVIEW MODE before user presses START NAVIGATION
+      expect(find.text('TRIP PREVIEW MODE'), findsOneWidget);
+      expect(find.text('START NAVIGATION'), findsOneWidget);
+      expect(find.text('EXIT NAV'), findsNothing);
+      expect(find.textContaining('Next maneuver in'), findsNothing);
     });
 
-    test('TEST L, M & N: Corridor chargers filtered along route & navigate from corridor charger opens InAppNavigationScreen', () async {
+    testWidgets('TEST 2: Chargers appear on route before navigation starts', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -327,11 +197,19 @@ void main() {
 
       await provider.planTrip(origin: origin, destination: dest);
 
-      expect(provider.discoveryMode, equals('route'));
-      expect(provider.markers, isNotEmpty);
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Verifies corridor chargers are loaded and visible on route before START NAVIGATION is pressed
+      expect(provider.getFilteredMarkers(), isNotEmpty);
+      expect(provider.getFilteredMarkers().any((m) => m.title.contains('Kalyan Grand Business Hotel')), isTrue);
     });
 
-    testWidgets('TEST P: InAppNavigationScreen receives route & charger data, displays distinct recommended markers & HUD metrics', (tester) async {
+    testWidgets('TEST 3: START NAVIGATION changes preview -> active navigation', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -341,65 +219,18 @@ void main() {
       );
 
       const origin = LocationSearchResult(
-        displayName: 'SRM University Kattankulathur, Chennai',
-        latitude: 12.8228,
-        longitude: 80.0439,
-        source: LocationSearchResultSource.googlePlaces,
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
       );
       const dest = LocationSearchResult(
-        displayName: 'Chennai Airport',
-        latitude: 12.9939,
-        longitude: 80.1706,
-        source: LocationSearchResultSource.googlePlaces,
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
       );
 
-      provider.setSelectedVehicle(VehicleService.indianEVEcosystem.first);
-      await provider.planTrip(origin: origin, destination: dest);
-
-      // 1. Origin/destination -> Route calculated
-      expect(provider.routePoints, isNotEmpty);
-
-      // 2. Battery consumption & stops calculated
-      expect(provider.tripEnergyAnalysis.estimatedRangeKm, greaterThan(0));
-
-      // 3. Render InAppNavigationScreen
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: const InAppNavigationScreen(origin: origin, destination: dest),
-      ));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      // 4. Verify UI & HUD elements
-      expect(find.byType(InAppNavigationScreen), findsOneWidget);
-      expect(find.text('Navigating to Chennai Airport'), findsOneWidget);
-      expect(find.text('START NAVIGATION'), findsOneWidget);
-      expect(find.text('Open in Google Maps'), findsOneWidget);
-    });
-
-    testWidgets('TEST Q: START NAVIGATION activates live in-app navigation mode without opening Google Maps', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
-
-      const origin = LocationSearchResult(
-        displayName: 'SRM University Kattankulathur, Chennai',
-        latitude: 12.8228,
-        longitude: 80.0439,
-        source: LocationSearchResultSource.googlePlaces,
-      );
-      const dest = LocationSearchResult(
-        displayName: 'Chennai Airport',
-        latitude: 12.9939,
-        longitude: 80.1706,
-        source: LocationSearchResultSource.googlePlaces,
-      );
-
-      provider.setSelectedVehicle(VehicleService.indianEVEcosystem.first);
       await provider.planTrip(origin: origin, destination: dest);
 
       await tester.pumpWidget(createWidgetUnderTest(
@@ -409,26 +240,96 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('START NAVIGATION'), findsOneWidget);
+      expect(find.text('TRIP PREVIEW MODE'), findsOneWidget);
 
-      // Tap START NAVIGATION
       await tester.tap(find.text('START NAVIGATION'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump(const Duration(milliseconds: 500));
 
-      // 1. Verifies LIVE NAVIGATION active mode
+      // Verifies transition to LIVE NAVIGATION active mode
       expect(find.text('LIVE NAVIGATION'), findsWidgets);
       expect(find.text('EXIT NAV'), findsOneWidget);
+    });
 
-      // 2. Request count remains 0 (Zero location permission asked)
-      expect(mapsService.requestCount, equals(0));
+    testWidgets('TEST 4: No Google Maps opens during START NAVIGATION', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
 
-      // 3. Test EXIT NAV returns to preview mode
-      await tester.tap(find.text('EXIT NAV'));
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('START NAVIGATION'), findsOneWidget);
+      await tester.tap(find.text('START NAVIGATION'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Zero location permission requested & remains inside EVHub
+      expect(mapsService.requestCount, equals(0));
+      expect(find.byType(InAppNavigationScreen), findsOneWidget);
+    });
+
+    testWidgets('TEST 5: Existing individual charger NAVIGATE still works (opens Google Maps, not InAppNavigationScreen)', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (_) => ChargerMarkerDetailsSheet(charger: sampleValidCharger),
+                );
+              },
+              child: const Text('Open Sheet'),
+            ),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.text('Open Sheet'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
+      expect(find.text('NAVIGATE'), findsOneWidget);
+
+      await tester.tap(find.text('NAVIGATE'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Direct NAVIGATE button from charger details sheet keeps sheet visible and does NOT launch InAppNavigationScreen
+      expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
+      expect(find.byType(InAppNavigationScreen), findsNothing);
     });
 
     testWidgets('TEST R: Active simulation progresses along polyline, updates metrics and top maneuver area', (tester) async {

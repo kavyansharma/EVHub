@@ -383,7 +383,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       ),
     );
 
-    // Active vehicle marker (Violet hue)
+    // Active vehicle marker (Violet hue - ONLY when in ACTIVE NAVIGATION MODE)
     if (_isNavigatingActive && mp.routePoints.isNotEmpty && _currentRouteIndex < mp.routePoints.length) {
       markers.add(
         Marker(
@@ -477,7 +477,6 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     final totalPctUsed = usableCapacityKwh > 0 ? (totalEnergyNeededKwh / usableCapacityKwh) * 100.0 : 20.0;
 
     final currentBatteryPct = (startingBatteryPct - (progressFraction * totalPctUsed) + _chargedBatteryBoostPct).clamp(0.0, 100.0);
-    final batteryUsedDisplay = '${totalEnergyNeededKwh.toStringAsFixed(1)} kWh';
 
     final distanceToStopKm = activeStop != null
         ? (activeStop.distanceFromStartKm - coveredDistanceKm).clamp(0.0, totalDistanceKm)
@@ -542,7 +541,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    _isNavigatingActive ? 'LIVE NAVIGATION' : 'ROUTE PREVIEW',
+                                    _isNavigatingActive ? 'LIVE NAVIGATION' : 'TRIP PREVIEW MODE',
                                     style: GoogleFonts.outfit(
                                       color: _isNavigatingActive ? const Color(0xFF3B82F6) : const Color(0xFF10B981),
                                       fontSize: 10,
@@ -565,7 +564,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 6),
-                            // Top Maneuver Area: Next maneuver | Distance to maneuver
+                            // Top Maneuver Area (ONLY visible during active navigation)
                             if (_isNavigatingActive) ...[
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -608,7 +607,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               ),
                               const SizedBox(height: 6),
                             ],
-                            // Navigation HUD: Remaining distance | ETA | Battery
+                            // Navigation HUD / Trip Summary Bar: Distance | ETA | Arrival Battery | Charging Stops
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
@@ -623,8 +622,8 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                                   _buildTopNavMetric('ETA', _isNavigatingActive ? remainingEtaDisplay : totalDurationDisplay),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
                                   _buildTopNavMetric(
-                                    _isNavigatingActive ? 'Battery' : 'Battery Used',
-                                    _isNavigatingActive ? '${currentBatteryPct.toStringAsFixed(0)}%' : batteryUsedDisplay,
+                                    _isNavigatingActive ? 'Remaining Battery' : 'Arrival Battery',
+                                    _isNavigatingActive ? '${currentBatteryPct.toStringAsFixed(0)}%' : '${expectedBatteryAtDestPct.toStringAsFixed(0)}%',
                                   ),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
                                   _buildTopNavMetric('Stops', '${stops.length - _activeStopIndex} Left'),
@@ -730,7 +729,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Next Charging Stop Card (Next Stop | Distance | Expected Arrival Battery | Recommended Charge)
+                  // Next Charging Stop / Charging Requirement Card
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -753,7 +752,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                activeStop != null ? 'Next Stop: ${activeStop.charger.title}' : 'Direct Trip — No Charging Required',
+                                activeStop != null ? 'Next Recommended Stop: ${activeStop.charger.title}' : 'Direct Trip — No Charging Required',
                                 style: GoogleFonts.outfit(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -771,18 +770,26 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             '${activeStop.charger.networkName} • ${activeStop.charger.displayPower} • ${activeStop.charger.computedStatus.name.toUpperCase()}',
                             style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
                           ),
+                        ] else if (smartResult != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            smartResult.chargingRequired
+                                ? 'Charging required along route'
+                                : 'Direct trip reachable on current battery reserve',
+                            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
+                          ),
                         ],
                         const SizedBox(height: 10),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             _buildStopSubMetric(
-                              label: 'Distance to Stop',
-                              value: activeStop != null ? '${distanceToStopKm.toStringAsFixed(1)} km' : remainingDistanceDisplay,
+                              label: 'Distance',
+                              value: activeStop != null ? '${distanceToStopKm.toStringAsFixed(1)} km' : totalDistanceDisplay,
                               color: const Color(0xFF3B82F6),
                             ),
                             _buildStopSubMetric(
-                              label: 'Battery at Arrival',
+                              label: 'Arrival Battery',
                               value: activeStop != null
                                   ? '${expectedBatteryAtStopPct.toStringAsFixed(0)}%'
                                   : '${expectedBatteryAtDestPct.toStringAsFixed(0)}%',
@@ -797,7 +804,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             ),
                           ],
                         ),
-                        if (activeStop != null) ...[
+                        if (_isNavigatingActive && activeStop != null) ...[
                           const SizedBox(height: 12),
                           Row(
                             children: [
