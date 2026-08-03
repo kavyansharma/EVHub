@@ -134,7 +134,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
 
     _simulationTimer?.cancel();
 
-    // Start in-app navigation progress:
+    // Start in-app navigation progress inside EVHub:
     // If live GPS location is available and permission is granted, track position.
     // If live location is unavailable or permission is not granted, run route simulation along decoded polyline without prompting for permissions.
     _simulationTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
@@ -360,30 +360,30 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     final markers = <Marker>{};
     final recommendedIds = mp.recommendedStops.map((s) => s.charger.id).toSet();
 
-    // Origin marker
+    // 1. Green Start Marker (Origin)
     markers.add(
       Marker(
         markerId: const MarkerId('nav_origin'),
         position: LatLng(widget.origin.latitude, widget.origin.longitude),
         infoWindow: InfoWindow(title: 'Start: ${widget.origin.displayName}'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ),
     );
 
-    // Destination marker
+    // 2. Red Destination Marker
     markers.add(
       Marker(
         markerId: const MarkerId('nav_destination'),
         position: LatLng(widget.destination.latitude, widget.destination.longitude),
         infoWindow: InfoWindow(
-          title: 'Navigating to: ${widget.destination.displayName}',
+          title: 'Destination: ${widget.destination.displayName}',
           snippet: widget.destination.subtitle ?? 'Destination',
         ),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       ),
     );
 
-    // Active vehicle marker (Violet hue - ONLY when in ACTIVE NAVIGATION MODE)
+    // 3. Moving EV Vehicle Marker (Violet hue - Active Navigation mode only)
     if (_isNavigatingActive && mp.routePoints.isNotEmpty && _currentRouteIndex < mp.routePoints.length) {
       markers.add(
         Marker(
@@ -396,7 +396,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       );
     }
 
-    // All corridor chargers (with recommended chargers visually distinct)
+    // 4. EV Chargers along route corridor (Blue for normal chargers, Green with star for recommended)
     final corridorChargers = mp.getFilteredMarkers();
     for (final c in corridorChargers) {
       final isRec = recommendedIds.contains(c.id);
@@ -492,7 +492,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // 1. FULL SCREEN GOOGLE MAP (In-App Navigation View)
+          // 1. FULL SCREEN GOOGLE MAP VIEW (In-App Maps Screen)
           Positioned.fill(
             child: GoogleMap(
               initialCameraPosition: initialPos,
@@ -510,7 +510,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
             ),
           ),
 
-          // 2. TOP NAVIGATION HUD CARD
+          // 2. TOP CARD (Trip Metrics: Total Distance, ETA, Battery Consumption, Stops)
           Positioned(
             top: 40, left: 16, right: 16,
             child: GlassContainer(
@@ -554,7 +554,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Navigating to ${widget.destination.displayName}',
+                              'Route to ${widget.destination.displayName}',
                               style: GoogleFonts.outfit(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -564,7 +564,8 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 6),
-                            // Top Maneuver Area (ONLY visible during active navigation)
+
+                            // Active Maneuver Instruction (Visible only during Active Navigation Mode)
                             if (_isNavigatingActive) ...[
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -592,7 +593,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                           Text(
-                                            'Next maneuver in ${_getDistanceToManeuver(distanceToStopKm, remainingDistanceKm, activeStop != null)}',
+                                            'Next turn in ${_getDistanceToManeuver(distanceToStopKm, remainingDistanceKm, activeStop != null)}',
                                             style: GoogleFonts.outfit(
                                               color: const Color(0xFF60A5FA),
                                               fontSize: 10,
@@ -607,7 +608,8 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               ),
                               const SizedBox(height: 6),
                             ],
-                            // Navigation HUD / Trip Summary Bar: Distance | ETA | Arrival Battery | Charging Stops
+
+                            // Top Metrics Bar: Distance | ETA | Battery Consumption / Remaining | Charging Stops Required
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
@@ -617,16 +619,16 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                                 children: [
-                                  _buildTopNavMetric('Distance', _isNavigatingActive ? remainingDistanceDisplay : totalDistanceDisplay),
+                                  _buildTopNavMetric('Total Dist.', _isNavigatingActive ? remainingDistanceDisplay : totalDistanceDisplay),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
-                                  _buildTopNavMetric('ETA', _isNavigatingActive ? remainingEtaDisplay : totalDurationDisplay),
+                                  _buildTopNavMetric('Est. Time', _isNavigatingActive ? remainingEtaDisplay : totalDurationDisplay),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
                                   _buildTopNavMetric(
-                                    _isNavigatingActive ? 'Remaining Battery' : 'Arrival Battery',
-                                    _isNavigatingActive ? '${currentBatteryPct.toStringAsFixed(0)}%' : '${expectedBatteryAtDestPct.toStringAsFixed(0)}%',
+                                    _isNavigatingActive ? 'Battery' : 'Consumption',
+                                    _isNavigatingActive ? '${currentBatteryPct.toStringAsFixed(0)}%' : '${totalEnergyNeededKwh.toStringAsFixed(1)} kWh',
                                   ),
                                   Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
-                                  _buildTopNavMetric('Stops', '${stops.length - _activeStopIndex} Left'),
+                                  _buildTopNavMetric('Stops Req.', '${stops.length} Stop${stops.length == 1 ? "" : "s"}'),
                                 ],
                               ),
                             ),
@@ -668,9 +670,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            onPressed: () {
-                              _fitMapBounds();
-                            },
+                            onPressed: _fitMapBounds,
                             child: Text(
                               'Recenter Route',
                               style: GoogleFonts.outfit(
@@ -719,7 +719,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
             ),
           ),
 
-          // 4. BOTTOM NAVIGATION CONTROL CONSOLE HUD
+          // 4. BOTTOM CARD & MAIN CONTROLS
           Positioned(
             left: 16, right: 16, bottom: 24,
             child: GlassContainer(
@@ -729,7 +729,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Next Charging Stop / Charging Requirement Card
+                  // Next Recommended Charger Card
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -752,7 +752,9 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                activeStop != null ? 'Next Recommended Stop: ${activeStop.charger.title}' : 'Direct Trip — No Charging Required',
+                                _isNavigatingActive
+                                    ? (activeStop != null ? 'Charging Stop Ahead: ${activeStop.charger.title}' : 'Direct Trip — No Charging Required')
+                                    : (activeStop != null ? 'Next Recommended Charger: ${activeStop.charger.title}' : 'Direct Trip — No Charging Required'),
                                 style: GoogleFonts.outfit(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -774,7 +776,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                           const SizedBox(height: 4),
                           Text(
                             smartResult.chargingRequired
-                                ? 'Charging required along route'
+                                ? 'Charging required along route corridor'
                                 : 'Direct trip reachable on current battery reserve',
                             style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
                           ),
@@ -785,11 +787,11 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                           children: [
                             _buildStopSubMetric(
                               label: 'Distance',
-                              value: activeStop != null ? '${distanceToStopKm.toStringAsFixed(1)} km' : totalDistanceDisplay,
+                              value: activeStop != null ? '${(activeStop.distanceFromStartKm - (_isNavigatingActive ? coveredDistanceKm : 0)).clamp(0, totalDistanceKm).toStringAsFixed(1)} km' : totalDistanceDisplay,
                               color: const Color(0xFF3B82F6),
                             ),
                             _buildStopSubMetric(
-                              label: 'Arrival Battery',
+                              label: 'Expected Battery',
                               value: activeStop != null
                                   ? '${expectedBatteryAtStopPct.toStringAsFixed(0)}%'
                                   : '${expectedBatteryAtDestPct.toStringAsFixed(0)}%',
@@ -804,6 +806,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             ),
                           ],
                         ),
+                        // START CHARGING & SKIP STOP buttons (Only active in navigation mode when approaching charger)
                         if (_isNavigatingActive && activeStop != null) ...[
                           const SizedBox(height: 12),
                           Row(
@@ -844,7 +847,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
 
                   const SizedBox(height: 16),
 
-                  // START NAVIGATION / LIVE NAVIGATION & EXIT NAVIGATION Controls
+                  // MAIN ACTION BUTTON: START NAVIGATION (Preview Mode) / LIVE NAVIGATION & EXIT NAV (Active Mode)
                   if (!_isNavigatingActive) ...[
                     SizedBox(
                       width: double.infinity,

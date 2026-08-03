@@ -10,11 +10,8 @@ import '../../services/charging_time_estimator_service.dart';
 import '../../services/navigation_launcher_service.dart';
 import '../../screens/phase4/charger_details_screen.dart';
 
-
-
 /// Synchronous Charger Details Bottom Sheet.
-/// Immediately renders complete charger details from the in-memory [charger] object
-/// without blocking async calls, loaders, or dark empty states.
+/// Immediately renders complete charger details from the in-memory [charger] object.
 class ChargerMarkerDetailsSheet extends StatelessWidget {
   final MapMarkerModel charger;
 
@@ -219,7 +216,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
 
-                  // LOCATION & DISTANCE ROW
+                  // LOCATION & DISTANCE DETAILS ROW (Distance from route & Distance to destination)
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -244,19 +241,16 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                             ),
                           ],
                         ),
-                        if (charger.distanceKm != null) ...[
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              const Icon(Icons.near_me, color: Color(0xFF3B82F6), size: 14),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${charger.distanceKm!.toStringAsFixed(1)} km away',
-                                style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ],
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                                Text(
+                                  'Distance: ${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km" : "On Route"}',
+                                  style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -276,64 +270,53 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                         style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       const Spacer(),
-                      _buildCompatibilityBadge(compStatus),
+                      _buildCompatibilityBadge(compStatus.name),
                     ],
                   ),
                   const SizedBox(height: 20),
 
-                  // ACTION BUTTONS: NAVIGATE TO CHARGER + START & FULL DETAILS
+                  // ACTION BUTTONS: VIEW DETAILS & NAVIGATE
                   Row(
                     children: [
                       Expanded(
-                        flex: 1,
-                        child: SizedBox(
-                          height: 50,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _onNavigatePressed(context),
-                            icon: const Icon(Icons.navigation_outlined, color: Color(0xFF3B82F6), size: 18),
-                            label: Text(
-                              'NAVIGATE',
-                              style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: charger)),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white24, width: 1.5),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          icon: const Icon(Icons.info_outline, color: Colors.white, size: 18),
+                          label: Text(
+                            'VIEW DETAILS',
+                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        flex: 2,
-                        child: SizedBox(
-                          height: 50,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: charger)),
-                              );
-                            },
-                            icon: const Icon(Icons.bolt, color: Colors.black, size: 20),
-                            label: Text(
-                              'START CHARGING',
-                              style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF10B981),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
+                        child: ElevatedButton.icon(
+                          onPressed: () => _onNavigatePressed(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF3B82F6),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          icon: const Icon(Icons.navigation, color: Colors.white, size: 18),
+                          label: Text(
+                            'NAVIGATE',
+                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      'Navigation Status: Ready',
-                      style: GoogleFonts.outfit(color: Colors.white38, fontSize: 10),
-                    ),
                   ),
                 ],
               ),
@@ -347,28 +330,28 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
   Widget _buildStatusBadge(MarkerStatus status) {
     Color bg;
     Color fg;
-    String label;
+    String text;
 
     switch (status) {
       case MarkerStatus.available:
-        bg = Colors.green.withOpacity(0.2);
-        fg = Colors.greenAccent;
-        label = 'AVAILABLE';
+        bg = const Color(0xFF10B981).withOpacity(0.15);
+        fg = const Color(0xFF10B981);
+        text = 'AVAILABLE';
         break;
       case MarkerStatus.busy:
-        bg = Colors.orange.withOpacity(0.2);
-        fg = Colors.orangeAccent;
-        label = 'BUSY';
+        bg = const Color(0xFFF59E0B).withOpacity(0.15);
+        fg = const Color(0xFFF59E0B);
+        text = 'BUSY';
         break;
       case MarkerStatus.offline:
-        bg = Colors.red.withOpacity(0.2);
+        bg = Colors.red.withOpacity(0.15);
         fg = Colors.redAccent;
-        label = 'OFFLINE';
+        text = 'OFFLINE';
         break;
       case MarkerStatus.unknown:
-        bg = Colors.grey.withOpacity(0.2);
+        bg = Colors.white.withOpacity(0.1);
         fg = Colors.white70;
-        label = 'Availability unknown';
+        text = 'STATUS UNKNOWN';
         break;
     }
 
@@ -377,59 +360,47 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: fg.withOpacity(0.4)),
+        border: Border.all(color: fg.withOpacity(0.3)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.outfit(color: fg, fontWeight: FontWeight.bold, fontSize: 11),
-          ),
-        ],
+      child: Text(
+        text,
+        style: GoogleFonts.outfit(color: fg, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5),
       ),
     );
   }
 
-  Widget _buildCompatibilityBadge(EVCompatibilityStatus status) {
-    Color fg;
-    String label;
+  Widget _buildCompatibilityBadge(String compStatus) {
+    Color color;
+    IconData icon;
 
-    switch (status) {
-      case EVCompatibilityStatus.compatible:
-        fg = Colors.greenAccent;
-        label = '✓ Compatible';
-        break;
-      case EVCompatibilityStatus.partiallyCompatible:
-        fg = Colors.amberAccent;
-        label = '⚠ Partial';
-        break;
-      case EVCompatibilityStatus.incompatible:
-        fg = Colors.redAccent;
-        label = '✕ Incompatible';
-        break;
-      case EVCompatibilityStatus.noVehicleSelected:
-        fg = Colors.white60;
-        label = 'Select your EV';
-        break;
+    if (compStatus == 'Compatible') {
+      color = const Color(0xFF10B981);
+      icon = Icons.check_circle;
+    } else if (compStatus == 'Incompatible') {
+      color = Colors.redAccent;
+      icon = Icons.cancel;
+    } else {
+      color = const Color(0xFFF59E0B);
+      icon = Icons.help_outline;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: fg.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: fg.withOpacity(0.3)),
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Text(
-        label,
-        style: GoogleFonts.outfit(color: fg, fontWeight: FontWeight.bold, fontSize: 11),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 5),
+          Text(
+            compStatus,
+            style: GoogleFonts.outfit(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }

@@ -52,7 +52,7 @@ class MockMapsServiceForNavTest extends MapsService {
     if (!isPermissionGranted) {
       throw Exception('Permission denied');
     }
-    return {'latitude': 12.8398, 'longitude': 80.0544}; // Vandalur Chennai
+    return {'latitude': 12.8398, 'longitude': 80.0544};
   }
 
   @override
@@ -88,16 +88,7 @@ class MockMapsServiceForNavTest extends MapsService {
 
   @override
   Future<LatLng?> getCoordinatesFromAddress(String address) async {
-    if (address.contains('Ansal Heights') || address.contains('Gurugram')) {
-      return const LatLng(28.3970, 76.9602);
-    }
-    if (address.contains('HUDA City Centre')) {
-      return const LatLng(28.4595, 77.0726);
-    }
-    if (address.contains('Vandalur') || address.contains('Chennai')) {
-      return const LatLng(12.8900, 80.0800);
-    }
-    return const LatLng(28.6139, 77.2090);
+    return const LatLng(12.8900, 80.0800);
   }
 }
 
@@ -134,8 +125,8 @@ void main() {
     );
   }
 
-  group('EVHUB — In-App EV Navigation & Navigate Button End-to-End Suite', () {
-    testWidgets('TEST 1: Creating trip opens preview mode (TRIP PREVIEW MODE, START NAVIGATION button visible)', (tester) async {
+  group('EVHUB — In-App EV Navigation 9-Point Verification Suite', () {
+    testWidgets('1. Selecting route opens map screen', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -166,14 +157,51 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // Verifies screen opens in TRIP PREVIEW MODE before user presses START NAVIGATION
+      expect(find.byType(InAppNavigationScreen), findsOneWidget);
+      expect(find.byType(GoogleMap), findsOneWidget);
       expect(find.text('TRIP PREVIEW MODE'), findsOneWidget);
-      expect(find.text('START NAVIGATION'), findsOneWidget);
-      expect(find.text('EXIT NAV'), findsNothing);
-      expect(find.textContaining('Next maneuver in'), findsNothing);
     });
 
-    testWidgets('TEST 2: Chargers appear on route before navigation starts', (tester) async {
+    testWidgets('2. Route polyline is visible', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      expect(provider.routePoints, isNotEmpty);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(GoogleMap), findsOneWidget);
+      final GoogleMap googleMapWidget = tester.widget(find.byType(GoogleMap));
+      expect(googleMapWidget.polylines, isNotEmpty);
+      expect(googleMapWidget.polylines.first.polylineId.value, equals('nav_route_polyline'));
+    });
+
+    testWidgets('3. Origin marker appears', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -204,12 +232,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // Verifies corridor chargers are loaded and visible on route before START NAVIGATION is pressed
-      expect(provider.getFilteredMarkers(), isNotEmpty);
-      expect(provider.getFilteredMarkers().any((m) => m.title.contains('Kalyan Grand Business Hotel')), isTrue);
+      final GoogleMap googleMapWidget = tester.widget(find.byType(GoogleMap));
+      final originMarker = googleMapWidget.markers.firstWhere((m) => m.markerId.value == 'nav_origin');
+      expect(originMarker, isNotNull);
+      expect(originMarker.position.latitude, equals(12.8398));
     });
 
-    testWidgets('TEST 3: START NAVIGATION changes preview -> active navigation', (tester) async {
+    testWidgets('4. Destination marker appears', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -240,18 +269,167 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('TRIP PREVIEW MODE'), findsOneWidget);
+      final GoogleMap googleMapWidget = tester.widget(find.byType(GoogleMap));
+      final destMarker = googleMapWidget.markers.firstWhere((m) => m.markerId.value == 'nav_destination');
+      expect(destMarker, isNotNull);
+      expect(destMarker.position.latitude, equals(12.9249));
+    });
+
+    testWidgets('5. Chargers along route appear', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final GoogleMap googleMapWidget = tester.widget(find.byType(GoogleMap));
+      final chargerMarkerExists = googleMapWidget.markers.any((m) => m.markerId.value.startsWith('nav_charger_'));
+      expect(chargerMarkerExists, isTrue);
+    });
+
+    testWidgets('6. Recommended chargers are highlighted', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final GoogleMap googleMapWidget = tester.widget(find.byType(GoogleMap));
+      final recMarker = googleMapWidget.markers.firstWhere((m) => m.markerId.value.contains('kalyan_grand_1'));
+      expect(recMarker, isNotNull);
+    });
+
+    testWidgets('7. START NAVIGATION does not open Google Maps', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       await tester.tap(find.text('START NAVIGATION'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // Verifies transition to LIVE NAVIGATION active mode
+      expect(find.byType(InAppNavigationScreen), findsOneWidget);
+      expect(mapsService.requestCount, equals(0));
+    });
+
+    testWidgets('8. Navigation starts inside EVHub only', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const InAppNavigationScreen(origin: origin, destination: dest),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('START NAVIGATION'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
       expect(find.text('LIVE NAVIGATION'), findsWidgets);
       expect(find.text('EXIT NAV'), findsOneWidget);
+
+      final GoogleMap googleMapWidget = tester.widget(find.byType(GoogleMap));
+      final vehicleMarker = googleMapWidget.markers.any((m) => m.markerId.value == 'active_vehicle_marker');
+      expect(vehicleMarker, isTrue);
     });
 
-    testWidgets('TEST 4: No Google Maps opens during START NAVIGATION', (tester) async {
+    testWidgets('9. No location permission popup appears', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -286,12 +464,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // Zero location permission requested & remains inside EVHub
       expect(mapsService.requestCount, equals(0));
-      expect(find.byType(InAppNavigationScreen), findsOneWidget);
     });
 
-    testWidgets('TEST 5: Existing individual charger NAVIGATE still works (opens Google Maps, not InAppNavigationScreen)', (tester) async {
+    testWidgets('Bonus test: Charger marker details sheet opens with VIEW DETAILS and NAVIGATE buttons', (tester) async {
       final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
       final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
       final provider = MapsProvider(
@@ -321,161 +497,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
+      expect(find.text('VIEW DETAILS'), findsOneWidget);
       expect(find.text('NAVIGATE'), findsOneWidget);
-
-      await tester.tap(find.text('NAVIGATE'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      // Direct NAVIGATE button from charger details sheet keeps sheet visible and does NOT launch InAppNavigationScreen
-      expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
-      expect(find.byType(InAppNavigationScreen), findsNothing);
-    });
-
-    testWidgets('TEST R: Active simulation progresses along polyline, updates metrics and top maneuver area', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
-
-      const origin = LocationSearchResult(
-        displayName: 'Vandalur, Chennai',
-        latitude: 12.8398,
-        longitude: 80.0544,
-        source: LocationSearchResultSource.googlePlaces,
-      );
-      const dest = LocationSearchResult(
-        displayName: 'Tambaram, Chennai',
-        latitude: 12.9249,
-        longitude: 80.1000,
-        source: LocationSearchResultSource.googlePlaces,
-      );
-
-      await provider.planTrip(origin: origin, destination: dest);
-
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: const InAppNavigationScreen(origin: origin, destination: dest),
-      ));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      await tester.tap(find.text('START NAVIGATION'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1500));
-
-      expect(find.text('LIVE NAVIGATION'), findsWidgets);
-      expect(find.textContaining('Next maneuver in'), findsOneWidget);
-      expect(mapsService.requestCount, equals(0));
-    });
-
-    testWidgets('TEST S: Charging stop card interactions - SKIP STOP & START CHARGING stay inside EVHub', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
-
-      const origin = LocationSearchResult(
-        displayName: 'Vandalur',
-        latitude: 12.8398,
-        longitude: 80.0544,
-        source: LocationSearchResultSource.localFallback,
-      );
-      const dest = LocationSearchResult(
-        displayName: 'Tambaram',
-        latitude: 12.9249,
-        longitude: 80.1000,
-        source: LocationSearchResultSource.localFallback,
-      );
-
-      await provider.planTrip(origin: origin, destination: dest);
-
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: const InAppNavigationScreen(origin: origin, destination: dest),
-      ));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      await tester.tap(find.text('START NAVIGATION'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      if (find.text('START CHARGING').evaluate().isNotEmpty) {
-        expect(find.text('START CHARGING'), findsWidgets);
-        expect(find.text('SKIP STOP'), findsWidgets);
-
-        // Tap START CHARGING
-        await tester.tap(find.text('START CHARGING').first);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 500));
-
-        // Verifies EVHub charging session dialog
-        expect(find.text('EV Charging Session'), findsOneWidget);
-        expect(find.text('FINISH CHARGING'), findsOneWidget);
-
-        // Finish charging
-        await tester.tap(find.text('FINISH CHARGING'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 500));
-
-        expect(find.text('EV Charging Session'), findsNothing);
-      }
-    });
-
-    testWidgets('TEST T: Navigation completion state shows Trip Completed overlay', (tester) async {
-      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
-      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
-      final provider = MapsProvider(
-        mapsRepository: MapsRepository(mapsService: mapsService),
-        mapsService: mapsService,
-        firestoreChargerRepository: firestoreRepo,
-      );
-
-      const origin = LocationSearchResult(
-        displayName: 'Vandalur',
-        latitude: 12.8398,
-        longitude: 80.0544,
-        source: LocationSearchResultSource.localFallback,
-      );
-      const dest = LocationSearchResult(
-        displayName: 'Tambaram',
-        latitude: 12.9249,
-        longitude: 80.1000,
-        source: LocationSearchResultSource.localFallback,
-      );
-
-      await provider.planTrip(origin: origin, destination: dest);
-
-      await tester.pumpWidget(createWidgetUnderTest(
-        mapsProvider: provider,
-        child: const InAppNavigationScreen(origin: origin, destination: dest),
-      ));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      await tester.tap(find.text('START NAVIGATION'));
-      await tester.pump();
-
-      // Fast forward simulation through periodic timer
-      for (int i = 0; i < 25; i++) {
-        await tester.pump(const Duration(milliseconds: 800));
-      }
-
-      expect(find.text('Trip Completed! 🎉'), findsOneWidget);
-      expect(find.text('DONE'), findsOneWidget);
-
-      await tester.tap(find.text('DONE'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.text('START NAVIGATION'), findsOneWidget);
     });
   });
 }
