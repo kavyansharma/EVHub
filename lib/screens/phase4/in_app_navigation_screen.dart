@@ -178,6 +178,14 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     _showSnackbar('Exited active navigation.');
   }
 
+  void _handleExit() {
+    _simulationTimer?.cancel();
+    context.read<MapsProvider>().clearTrip();
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+  }
+
   void _skipCurrentStop(MapsProvider mp) {
     setState(() {
       if (_activeStopIndex < mp.recommendedStops.length) {
@@ -413,7 +421,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                 : '${c.networkName} • ${c.displayPower} • ${c.computedStatus.name.toUpperCase()}',
           ),
           icon: BitmapDescriptor.defaultMarkerWithHue(
-            isRec ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueCyan,
+            isRec ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueBlue,
           ),
           onTap: () {
             mp.setSelectedMarker(c);
@@ -524,7 +532,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: _handleExit,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -938,7 +946,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                       ),
                       const SizedBox(width: 10),
                       ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: _handleExit,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.redAccent.withOpacity(0.2),
                           foregroundColor: Colors.redAccent,

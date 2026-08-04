@@ -11,6 +11,7 @@ import 'package:evhub/repositories/maps_repository.dart';
 import 'package:evhub/services/maps_service.dart';
 import 'package:evhub/core/widgets/charger_marker_details_sheet.dart';
 import 'package:evhub/screens/phase4/in_app_navigation_screen.dart';
+import 'package:evhub/screens/phase4/route_planner_screen.dart';
 
 class MockFirestoreRepoForNavTest implements FirestoreChargerRepository {
   final List<MapMarkerModel> mockChargers;
@@ -499,6 +500,41 @@ void main() {
       expect(find.byType(ChargerMarkerDetailsSheet), findsOneWidget);
       expect(find.text('VIEW DETAILS'), findsOneWidget);
       expect(find.text('NAVIGATE'), findsOneWidget);
+    });
+
+    testWidgets('10. RoutePlannerScreen opens map screen directly when trip is planned', (tester) async {
+      final mapsService = MockMapsServiceForNavTest(isPermissionGranted: false);
+      final firestoreRepo = MockFirestoreRepoForNavTest(mockChargers: [sampleValidCharger]);
+      final provider = MapsProvider(
+        mapsRepository: MapsRepository(mapsService: mapsService),
+        mapsService: mapsService,
+        firestoreChargerRepository: firestoreRepo,
+      );
+
+      const origin = LocationSearchResult(
+        displayName: 'Vandalur, Chennai',
+        latitude: 12.8398,
+        longitude: 80.0544,
+        source: LocationSearchResultSource.localFallback,
+      );
+      const dest = LocationSearchResult(
+        displayName: 'Tambaram, Chennai',
+        latitude: 12.9249,
+        longitude: 80.1000,
+        source: LocationSearchResultSource.localFallback,
+      );
+
+      await provider.planTrip(origin: origin, destination: dest);
+
+      await tester.pumpWidget(createWidgetUnderTest(
+        mapsProvider: provider,
+        child: const RoutePlannerScreen(),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(InAppNavigationScreen), findsOneWidget);
+      expect(find.byType(GoogleMap), findsOneWidget);
     });
   });
 }

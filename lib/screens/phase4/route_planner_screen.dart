@@ -570,13 +570,20 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   @override
   Widget build(BuildContext context) {
     final theme      = Theme.of(context);
-    final brandColor = theme.colorScheme.primary;
     final mp         = context.watch<MapsProvider>();
-
+    final brandColor = theme.colorScheme.primary;
     final isRouteActive = mp.discoveryMode == 'route' && mp.routePoints.isNotEmpty;
-    final isRouteFailed = mp.discoveryMode == 'route' && mp.routePoints.isEmpty
-        && !mp.isLoadingRoute && !mp.isLoading;
-    final chargersList  = mp.getFilteredMarkers();
+
+    if (isRouteActive) {
+      final origin = _selectedOrigin ?? mp.tripOrigin;
+      final destination = _selectedDestination ?? mp.tripDestination;
+      if (origin != null && destination != null) {
+        return InAppNavigationScreen(
+          origin: origin,
+          destination: destination,
+        );
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,

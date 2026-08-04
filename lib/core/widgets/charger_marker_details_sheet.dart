@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -245,10 +246,24 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                                Text(
-                                  'Distance: ${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km" : "On Route"}',
-                                  style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 12),
-                                ),
+                            Text(
+                              'Distance from Route: ${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km" : "On Route"}',
+                              style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            if (mapsProvider.tripDestination != null) ...[
+                              Builder(builder: (_) {
+                                const p = 0.017453292519943295;
+                                final dLat = (mapsProvider.tripDestination!.latitude - charger.latitude) * p;
+                                final dLng = (mapsProvider.tripDestination!.longitude - charger.longitude) * p;
+                                final a = 0.5 - math.cos(dLat) / 2 +
+                                    math.cos(charger.latitude * p) * math.cos(mapsProvider.tripDestination!.latitude * p) * (1 - math.cos(dLng)) / 2;
+                                final distKm = 12742 * math.asin(math.sqrt(a));
+                                return Text(
+                                  'Distance to Destination: ${distKm.toStringAsFixed(1)} km',
+                                  style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 12),
+                                );
+                              }),
+                            ],
                           ],
                         ),
                       ],
