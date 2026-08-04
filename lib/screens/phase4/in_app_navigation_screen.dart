@@ -373,7 +373,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       Marker(
         markerId: const MarkerId('nav_origin'),
         position: LatLng(widget.origin.latitude, widget.origin.longitude),
-        infoWindow: InfoWindow(title: 'Start: ${widget.origin.displayName}'),
+        infoWindow: InfoWindow(title: 'START: ${widget.origin.displayName}'),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ),
     );
@@ -384,7 +384,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
         markerId: const MarkerId('nav_destination'),
         position: LatLng(widget.destination.latitude, widget.destination.longitude),
         infoWindow: InfoWindow(
-          title: 'Destination: ${widget.destination.displayName}',
+          title: 'DESTINATION: ${widget.destination.displayName}',
           snippet: widget.destination.subtitle ?? 'Destination',
         ),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
