@@ -573,6 +573,9 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     final mp         = context.watch<MapsProvider>();
     final brandColor = theme.colorScheme.primary;
     final isRouteActive = mp.discoveryMode == 'route' && mp.routePoints.isNotEmpty;
+    final isRouteFailed = mp.discoveryMode == 'route' && mp.routePoints.isEmpty
+        && !mp.isLoadingRoute && !mp.isLoading;
+    final chargersList  = mp.getFilteredMarkers();
 
     if (isRouteActive) {
       final origin = _selectedOrigin ?? mp.tripOrigin;

@@ -247,7 +247,9 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Distance from Route: ${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km" : "On Route"}',
+                              mapsProvider.tripDestination != null
+                                  ? 'Distance from Route: ${charger.distanceKm != null ? "${charger.distanceKm!.toStringAsFixed(1)} km" : "On Route"}'
+                                  : (charger.distanceKm != null ? '${charger.distanceKm!.toStringAsFixed(1)} km away' : 'On Route'),
                               style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 12),
                             ),
                             if (mapsProvider.tripDestination != null) ...[
