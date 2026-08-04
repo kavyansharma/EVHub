@@ -292,11 +292,11 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
 
-                  // ACTION BUTTONS: VIEW DETAILS & NAVIGATE
+                  // ACTION BUTTONS: VIEW DETAILS, NAVIGATE & START CHARGING
                   Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton.icon(
+                        child: OutlinedButton(
                           onPressed: () {
                             Navigator.push(
                               context,
@@ -307,29 +307,48 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                             foregroundColor: Colors.white,
                             side: const BorderSide(color: Colors.white24, width: 1.5),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
-                          icon: const Icon(Icons.info_outline, color: Colors.white, size: 18),
-                          label: Text(
+                          child: Text(
                             'VIEW DETAILS',
-                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
-                        child: ElevatedButton.icon(
+                        child: OutlinedButton(
                           onPressed: () => _onNavigatePressed(context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF3B82F6),
-                            foregroundColor: Colors.white,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF3B82F6),
+                            side: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
-                          icon: const Icon(Icons.navigation, color: Colors.white, size: 18),
-                          label: Text(
+                          child: Text(
                             'NAVIGATE',
-                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                            style: GoogleFonts.outfit(color: const Color(0xFF3B82F6), fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => ChargerDetailsScreen(marker: charger)),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: Text(
+                            'START CHARGING',
+                            style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11),
                           ),
                         ),
                       ),
@@ -368,7 +387,7 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
       case MarkerStatus.unknown:
         bg = Colors.white.withOpacity(0.1);
         fg = Colors.white70;
-        text = 'STATUS UNKNOWN';
+        text = 'Availability unknown';
         break;
     }
 
