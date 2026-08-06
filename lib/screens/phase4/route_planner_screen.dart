@@ -1,3 +1,4 @@
+// ignore_for_file: unused_element
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -575,7 +576,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     final isRouteActive = mp.discoveryMode == 'route' && mp.routePoints.isNotEmpty;
     final isRouteFailed = mp.discoveryMode == 'route' && mp.routePoints.isEmpty
         && !mp.isLoadingRoute && !mp.isLoading;
-    final chargersList  = mp.getFilteredMarkers();
 
     if (isRouteActive) {
       final origin = _selectedOrigin ?? mp.tripOrigin;
@@ -634,53 +634,15 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                 _buildInputSection(brandColor, mp),
                 const SizedBox(height: 20),
 
-                // 3. EV + Battery Selection
+                // 3. EV + Battery Selection (Includes PLAN TRIP Button)
                 _buildVehicleAndBatterySection(brandColor, mp),
                 const SizedBox(height: 20),
 
-                // 4. Smart Trip Analysis card (replaces basic energy check)
-                _buildSmartTripAnalysisCard(brandColor, mp),
-                const SizedBox(height: 20),
-
-                // 5. Route content
-                if (mp.isLoadingRoute || mp.isLoading)
+                // 4. Loading or Error Feedback
+                if (mp.isLoadingRoute || mp.isLoading || mp.isCalculatingSmartTrip || _isPlanningTrip)
                   _buildLoadingCard(brandColor, 'Calculating route & finding corridor chargers...')
-                else if (mp.isCalculatingSmartTrip)
-                  _buildLoadingCard(brandColor, 'Calculating smart charging recommendations...')
                 else if (isRouteFailed)
-                  _buildRouteFailedCard(brandColor, mp.searchStatusMessage)
-                else if (isRouteActive) ...[
-                  // 6. Trip Summary
-                  _buildTripSummaryCard(brandColor, mp, chargersList),
-                  const SizedBox(height: 20),
-
-                  // 7. Recommended Charging Stops
-                  _buildRecommendedStopsSection(brandColor, mp),
-
-                  // 8. Smart Trip Timeline & Costs
-                  if (mp.smartTripResult != null) ...[
-                    const SizedBox(height: 20),
-                    _buildCostSummaryCard(brandColor, mp),
-                    const SizedBox(height: 20),
-                    _buildWalletSimulationCard(brandColor, mp),
-                    const SizedBox(height: 20),
-                    _buildIceComparisonCard(brandColor, mp),
-                    const SizedBox(height: 20),
-                    _buildSmartTripTimeline(brandColor, mp),
-                  ],
-
-                  const SizedBox(height: 20),
-
-                  // 9. Chargers Along Route
-                  _buildRouteChargersHeader(brandColor, chargersList),
-                  const SizedBox(height: 14),
-                  if (chargersList.isEmpty)
-                    _buildEmptyChargersCard()
-                  else
-                    _buildChargersTimeline(brandColor, mp, chargersList),
-                ] else ...[
-                  _buildEmptyGuideState(brandColor),
-                ],
+                  _buildRouteFailedCard(brandColor, mp.searchStatusMessage),
               ],
             ),
           ),

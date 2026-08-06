@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../core/widgets/charger_marker_details_sheet.dart';
 import '../../models/location_search_result.dart';
+import '../../models/map_marker_model.dart';
 import '../../providers/maps_provider.dart';
 
 class InAppNavigationScreen extends StatefulWidget {
@@ -407,11 +408,25 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       );
     }
 
-    // 4. EV Chargers along route corridor (Blue for normal chargers, Green with star for recommended)
+    // 4. EV Chargers along route corridor (Blue = Available, Red = Busy, Yellow = Ultra Fast >=100kW, Green Star = Recommended)
     final corridorChargers = mp.getFilteredMarkers();
     for (final c in corridorChargers) {
       final isRec = recommendedIds.contains(c.id);
       final recStop = isRec ? mp.recommendedStops.firstWhere((s) => s.charger.id == c.id) : null;
+
+      final powerKw = double.tryParse(c.power.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+      final isUltraFast = powerKw >= 100.0;
+
+      double hue;
+      if (isRec) {
+        hue = BitmapDescriptor.hueGreen;
+      } else if (isUltraFast) {
+        hue = BitmapDescriptor.hueYellow;
+      } else if (c.computedStatus == MarkerStatus.busy || c.status == MarkerStatus.busy) {
+        hue = BitmapDescriptor.hueRed;
+      } else {
+        hue = BitmapDescriptor.hueBlue;
+      }
 
       markers.add(
         Marker(
@@ -423,9 +438,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                 ? '${c.networkName} • ${c.displayPower} • Target ${recStop?.recommendedChargingTargetPct.toStringAsFixed(0)}%'
                 : '${c.networkName} • ${c.displayPower} • ${c.computedStatus.name.toUpperCase()}',
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            isRec ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueBlue,
-          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(hue),
           onTap: () {
             mp.setSelectedMarker(c);
             showModalBottomSheet(
@@ -499,11 +512,14 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
 
     final expectedBatteryAtDestPct = (startingBatteryPct - totalPctUsed + _chargedBatteryBoostPct + stops.fold(0.0, (sum, s) => sum + s.batteryGainPct)).clamp(0.0, 100.0);
 
+    final originNameShort = widget.origin.displayName.split(',').first.trim();
+    final destNameShort = widget.destination.displayName.split(',').first.trim();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // 1. FULL SCREEN GOOGLE MAP VIEW (In-App Maps Screen)
+          // 1. FULL SCREEN GOOGLE MAP CANVAS (Fills ~95% of screen)
           Positioned.fill(
             child: GoogleMap(
               initialCameraPosition: initialPos,
@@ -521,180 +537,78 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
             ),
           ),
 
-          // 2. TOP CARD (Trip Metrics: Total Distance, ETA, Battery Consumption, Stops)
+          // 2. TOP FLOATING HEADER (Google Maps Style: ← Origin → Destination)
           Positioned(
             top: 40, left: 16, right: 16,
             child: GlassContainer(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               borderRadius: 20,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: _handleExit,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 22),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: _handleExit,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: (_isNavigatingActive ? const Color(0xFF3B82F6) : const Color(0xFF10B981)).withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    _isNavigatingActive ? 'LIVE NAVIGATION' : 'TRIP PREVIEW MODE',
-                                    style: GoogleFonts.outfit(
-                                      color: _isNavigatingActive ? const Color(0xFF3B82F6) : const Color(0xFF10B981),
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 1.0,
-                                    ),
-                                  ),
+                            Expanded(
+                              child: Text(
+                                '$originNameShort → $destNameShort',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Route to ${widget.destination.displayName}',
-                              style: GoogleFonts.outfit(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 6),
-
-                            // Active Maneuver Instruction (Visible only during Active Navigation Mode)
-                            if (_isNavigatingActive) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF3B82F6).withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.navigation, color: Color(0xFF3B82F6), size: 16),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            _getManeuverInstruction(mp, distanceToStopKm, remainingDistanceKm),
-                                            style: GoogleFonts.outfit(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          Text(
-                                            'Next turn in ${_getDistanceToManeuver(distanceToStopKm, remainingDistanceKm, activeStop != null)}',
-                                            style: GoogleFonts.outfit(
-                                              color: const Color(0xFF60A5FA),
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                            ],
-
-                            // Top Metrics Bar: Distance | ETA | Battery Consumption / Remaining | Charging Stops Required
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.06),
-                                borderRadius: BorderRadius.circular(12),
+                                color: (_isNavigatingActive ? const Color(0xFF3B82F6) : const Color(0xFF10B981)).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                children: [
-                                  _buildTopNavMetric('Total Dist.', _isNavigatingActive ? remainingDistanceDisplay : totalDistanceDisplay),
-                                  Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
-                                  _buildTopNavMetric('Est. Time', _isNavigatingActive ? remainingEtaDisplay : totalDurationDisplay),
-                                  Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
-                                  _buildTopNavMetric(
-                                    _isNavigatingActive ? 'Battery' : 'Consumption',
-                                    _isNavigatingActive ? '${currentBatteryPct.toStringAsFixed(0)}%' : '${totalEnergyNeededKwh.toStringAsFixed(1)} kWh',
-                                  ),
-                                  Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12)),
-                                  _buildTopNavMetric('Stops Req.', '${stops.length} Stop${stops.length == 1 ? "" : "s"}'),
-                                ],
+                              child: Text(
+                                _isNavigatingActive ? 'LIVE NAVIGATION' : 'TRIP PREVIEW MODE',
+                                style: GoogleFonts.outfit(
+                                  color: _isNavigatingActive ? const Color(0xFF3B82F6) : const Color(0xFF10B981),
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.8,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-
-                  // Location warning banner when GPS is off (NO automatic permission request)
-                  if (!mp.hasLocationPermission) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.location_off_outlined, color: Colors.amber, size: 16),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _isNavigatingActive
-                                  ? 'Route Simulation Active (GPS Disabled)'
-                                  : 'Live location is unavailable.',
-                              style: GoogleFonts.outfit(
-                                color: Colors.amber,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                        if (_isNavigatingActive) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(Icons.navigation, color: Color(0xFF3B82F6), size: 14),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '${_getManeuverInstruction(mp, distanceToStopKm, remainingDistanceKm)} (${_getDistanceToManeuver(distanceToStopKm, remainingDistanceKm, activeStop != null)})',
+                                  style: GoogleFonts.outfit(color: const Color(0xFF60A5FA), fontSize: 11, fontWeight: FontWeight.bold),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ),
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            onPressed: _fitMapBounds,
-                            child: Text(
-                              'Recenter Route',
-                              style: GoogleFonts.outfit(
-                                color: const Color(0xFF3B82F6),
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                            ],
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -703,7 +617,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
           // 3. RIGHT FLOATING CONTROLS (Recenter & Zoom)
           Positioned(
             right: 16,
-            top: 240,
+            top: 110,
             child: Column(
               children: [
                 FloatingActionButton.small(
@@ -730,157 +644,146 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
             ),
           ),
 
-          // 4. BOTTOM CARD & MAIN CONTROLS
+          // 4. BOTTOM FLOATING CARD (Minimal Google Maps Floating Route Summary)
           Positioned(
             left: 16, right: 16, bottom: 24,
             child: GlassContainer(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16),
               borderRadius: 24,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Next Recommended Charger Card
+                  // Minimal Metric Bar: Distance | ETA | Battery Consumption | Charging Stops
                   Container(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
+                      color: Colors.white.withOpacity(0.06),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: activeStop != null ? const Color(0xFF10B981).withOpacity(0.4) : const Color(0xFF3B82F6).withOpacity(0.4),
-                      ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              activeStop != null ? Icons.bolt : Icons.check_circle_outline,
-                              color: activeStop != null ? const Color(0xFF10B981) : const Color(0xFF3B82F6),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _isNavigatingActive
-                                    ? (activeStop != null ? 'Charging Stop Ahead: ${activeStop.charger.title}' : 'Direct Trip — No Charging Required')
-                                    : (activeStop != null ? 'Next Recommended Charger: ${activeStop.charger.title}' : 'Direct Trip — No Charging Required'),
-                                style: GoogleFonts.outfit(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
+                        _buildTopNavMetric(
+                          _isNavigatingActive ? 'Remaining' : 'Distance',
+                          _isNavigatingActive ? remainingDistanceDisplay : totalDistanceDisplay,
                         ),
-                        if (activeStop != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            '${activeStop.charger.networkName} • ${activeStop.charger.displayPower} • ${activeStop.charger.computedStatus.name.toUpperCase()}',
-                            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
-                          ),
-                        ] else if (smartResult != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            smartResult.chargingRequired
-                                ? 'Charging required along route corridor'
-                                : 'Direct trip reachable on current battery reserve',
-                            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildStopSubMetric(
-                              label: 'Distance',
-                              value: activeStop != null ? '${(activeStop.distanceFromStartKm - (_isNavigatingActive ? coveredDistanceKm : 0)).clamp(0, totalDistanceKm).toStringAsFixed(1)} km' : totalDistanceDisplay,
-                              color: const Color(0xFF3B82F6),
-                            ),
-                            _buildStopSubMetric(
-                              label: 'Expected Battery',
-                              value: activeStop != null
-                                  ? '${expectedBatteryAtStopPct.toStringAsFixed(0)}%'
-                                  : '${expectedBatteryAtDestPct.toStringAsFixed(0)}%',
-                              color: const Color(0xFF10B981),
-                            ),
-                            _buildStopSubMetric(
-                              label: 'Recommended Charge',
-                              value: activeStop != null
-                                  ? 'Target ${activeStop.recommendedChargingTargetPct.toStringAsFixed(0)}%'
-                                  : 'No Charge Needed',
-                              color: const Color(0xFFF59E0B),
-                            ),
-                          ],
+                        Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 14)),
+                        _buildTopNavMetric(
+                          _isNavigatingActive ? 'ETA' : 'Est. Time',
+                          _isNavigatingActive ? remainingEtaDisplay : totalDurationDisplay,
                         ),
-                        // START CHARGING & SKIP STOP buttons (Only active in navigation mode when approaching charger)
-                        if (_isNavigatingActive && activeStop != null) ...[
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _startInAppCharging(mp),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF10B981),
-                                    foregroundColor: Colors.black,
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                  icon: const Icon(Icons.bolt, size: 16, color: Colors.black),
-                                  label: Text('START CHARGING', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _skipCurrentStop(mp),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.amber,
-                                    side: const BorderSide(color: Colors.amber),
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                  icon: const Icon(Icons.skip_next, size: 16, color: Colors.amber),
-                                  label: Text('SKIP STOP', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                        Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 14)),
+                        _buildTopNavMetric(
+                          _isNavigatingActive ? 'Battery' : 'Consumption',
+                          _isNavigatingActive ? '${currentBatteryPct.toStringAsFixed(0)}%' : '${totalPctUsed.toStringAsFixed(0)}%',
+                        ),
+                        Text('|', style: GoogleFonts.outfit(color: Colors.white24, fontSize: 14)),
+                        _buildTopNavMetric('Stops', '${stops.length} Stop${stops.length == 1 ? "" : "s"}'),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 16),
-
-                  // MAIN ACTION BUTTON: START NAVIGATION (Preview Mode) / LIVE NAVIGATION & EXIT NAV (Active Mode)
-                  if (!_isNavigatingActive) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _startActiveNavigation(mp),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        icon: const Icon(Icons.navigation, color: Colors.black, size: 20),
-                        label: Text(
-                          'START NAVIGATION',
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                  // Next Charger Guidance Snippet (Compact)
+                  if (activeStop != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.bolt, color: Color(0xFF10B981), size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Next Stop: ${activeStop.charger.title} (${(activeStop.distanceFromStartKm - (_isNavigatingActive ? coveredDistanceKm : 0)).clamp(0, totalDistanceKm).toStringAsFixed(1)} km) • Arr ${expectedBatteryAtStopPct.toStringAsFixed(0)}% (Dest ${expectedBatteryAtDestPct.toStringAsFixed(0)}%)',
+                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
+                          Text(
+                            'Target ${activeStop.recommendedChargingTargetPct.toStringAsFixed(0)}%',
+                            style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ],
                       ),
                     ),
+                  ],
+
+                  // START CHARGING / SKIP STOP buttons during active navigation
+                  if (_isNavigatingActive && activeStop != null) ...[
                     const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _startInAppCharging(mp),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF10B981),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.bolt, size: 16, color: Colors.black),
+                            label: Text('START CHARGING', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _skipCurrentStop(mp),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.amber,
+                              side: const BorderSide(color: Colors.amber),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.skip_next, size: 16, color: Colors.amber),
+                            label: Text('SKIP STOP', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+
+                  // MAIN ACTION BUTTON: START NAVIGATION (Preview Mode) or LIVE NAVIGATION / EXIT NAV (Active Mode)
+                  if (!_isNavigatingActive) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _startActiveNavigation(mp),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF10B981),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            ),
+                            icon: const Icon(Icons.navigation, color: Colors.black, size: 20),
+                            label: Text(
+                              'START NAVIGATION',
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.redAccent, size: 20),
+                          tooltip: 'End Trip Plan',
+                          onPressed: _handleExit,
+                        ),
+                      ],
+                    ),
                   ] else ...[
                     Row(
                       children: [
@@ -890,15 +793,15 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF3B82F6),
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             ),
-                            icon: const Icon(Icons.directions_car, color: Colors.white, size: 20),
+                            icon: const Icon(Icons.directions_car, color: Colors.white, size: 18),
                             label: Text(
                               'LIVE NAVIGATION',
                               style: GoogleFonts.outfit(
                                 fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                                fontSize: 13,
                               ),
                             ),
                           ),
@@ -910,9 +813,9 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                             foregroundColor: Colors.redAccent,
                             side: const BorderSide(color: Colors.redAccent),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           ),
-                          icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+                          icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
                           label: Text(
                             'EXIT NAV',
                             style: GoogleFonts.outfit(
@@ -923,30 +826,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
                   ],
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _handleExit,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent.withOpacity(0.2),
-                          foregroundColor: Colors.redAccent,
-                          elevation: 0,
-                          side: const BorderSide(color: Colors.redAccent),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        ),
-                        icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                        label: Text(
-                          'End Trip Plan',
-                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -1045,15 +925,6 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     return Column(
       children: [
         Text(value, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-        Text(label, style: GoogleFonts.outfit(color: Colors.grey, fontSize: 9)),
-      ],
-    );
-  }
-
-  Widget _buildStopSubMetric({required String label, required String value, required Color color}) {
-    return Column(
-      children: [
-        Text(value, style: GoogleFonts.outfit(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
         Text(label, style: GoogleFonts.outfit(color: Colors.grey, fontSize: 9)),
       ],
     );
