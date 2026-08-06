@@ -268,6 +268,49 @@ class ChargerMarkerDetailsSheet extends StatelessWidget {
                             ],
                           ],
                         ),
+                        if (mapsProvider.tripDestination != null) ...[
+                          const SizedBox(height: 8),
+                          Builder(builder: (_) {
+                            double estimatedArrivalBatteryPct = mapsProvider.currentBatteryPct;
+                            if (mapsProvider.tripOrigin != null && mapsProvider.tripDestination != null) {
+                              final recStop = mapsProvider.recommendedStops.where((s) => s.charger.id == charger.id).firstOrNull;
+                              if (recStop != null) {
+                                estimatedArrivalBatteryPct = recStop.estimatedArrivalBatteryPct;
+                              } else {
+                                final originLat = mapsProvider.tripOrigin!.latitude;
+                                final originLng = mapsProvider.tripOrigin!.longitude;
+                                const p = 0.017453292519943295;
+                                final dLat = (charger.latitude - originLat) * p;
+                                final dLng = (charger.longitude - originLng) * p;
+                                final a = 0.5 - math.cos(dLat) / 2 + math.cos(originLat * p) * math.cos(charger.latitude * p) * (1 - math.cos(dLng)) / 2;
+                                final distFromOriginKm = 12742 * math.asin(math.sqrt(a));
+
+                                final smartResult = mapsProvider.smartTripResult;
+                                final totalKm = smartResult?.tripDistanceKm ?? 200.0;
+                                final totalKwh = mapsProvider.tripEnergyAnalysis.tripEnergyRequiredKwh;
+                                final batteryCapacity = mapsProvider.selectedVehicle?.usableBatteryCapacity ?? 40.0;
+                                final pctPerKm = totalKm > 0 ? ((totalKwh / batteryCapacity) * 100.0) / totalKm : 0.2;
+
+                                estimatedArrivalBatteryPct = (mapsProvider.currentBatteryPct - (distFromOriginKm * pctPerKm)).clamp(5.0, 100.0);
+                              }
+                            }
+
+                            return Row(
+                              children: [
+                                const Icon(Icons.battery_charging_full, color: Color(0xFF10B981), size: 16),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Estimated Arrival Battery: ',
+                                  style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+                                ),
+                                Text(
+                                  '${estimatedArrivalBatteryPct.toStringAsFixed(0)}%',
+                                  style: GoogleFonts.outfit(color: const Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ],
+                            );
+                          }),
+                        ],
                       ],
                     ),
                   ),

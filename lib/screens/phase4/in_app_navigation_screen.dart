@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../core/widgets/charger_marker_details_sheet.dart';
@@ -117,6 +116,20 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     return dist;
   }
 
+  double _calculateBearing(LatLng start, LatLng end) {
+    final startLat = start.latitude * (math.pi / 180.0);
+    final startLng = start.longitude * (math.pi / 180.0);
+    final endLat = end.latitude * (math.pi / 180.0);
+    final endLng = end.longitude * (math.pi / 180.0);
+
+    final dLng = endLng - startLng;
+    final y = math.sin(dLng) * math.cos(endLat);
+    final x = math.cos(startLat) * math.sin(endLat) -
+        math.sin(startLat) * math.cos(endLat) * math.cos(dLng);
+    final brng = math.atan2(y, x);
+    return (brng * (180.0 / math.pi) + 360.0) % 360.0;
+  }
+
   void _startActiveNavigation(MapsProvider mp) {
     if (mp.routePoints.isEmpty) {
       _showSnackbar('No route points available to navigate.');
@@ -135,8 +148,7 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     _simulationTimer?.cancel();
 
     // Start in-app navigation progress inside EVHub:
-    // If live GPS location is available and permission is granted, track position.
-    // If live location is unavailable or permission is not granted, run route simulation along decoded polyline without prompting for permissions.
+    // Follow vehicle position and rotate camera according to route direction.
     _simulationTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
       if (!mounted) {
         timer.cancel();
@@ -149,9 +161,19 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
           _currentRouteIndex++;
         });
         final currentPos = mp.routePoints[_currentRouteIndex];
+        double bearing = 0.0;
+        if (_currentRouteIndex < mp.routePoints.length - 1) {
+          final nextPos = mp.routePoints[_currentRouteIndex + 1];
+          bearing = _calculateBearing(currentPos, nextPos);
+        }
         _mapController?.animateCamera(
           CameraUpdate.newCameraPosition(
-            CameraPosition(target: currentPos, zoom: 15.5),
+            CameraPosition(
+              target: currentPos,
+              zoom: 16.5,
+              bearing: bearing,
+              tilt: 45.0,
+            ),
           ),
         );
       } else {
@@ -277,25 +299,6 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _launchExternalGoogleMaps() async {
-    final destLat = widget.destination.latitude;
-    final destLng = widget.destination.longitude;
-    final url = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$destLat,$destLng',
-    );
-
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        _showSnackbar('Unable to open Google Maps.');
-      }
-    } catch (e) {
-      debugPrint('[InAppNavigationScreen] Error launching Google Maps: $e');
-      _showSnackbar('Unable to open Google Maps.');
-    }
   }
 
   void _showSnackbar(String message) {
@@ -924,28 +927,9 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                   ],
 
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _launchExternalGoogleMaps,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white24),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          icon: const Icon(Icons.open_in_new, size: 16, color: Color(0xFF3B82F6)),
-                          label: Text(
-                            'Open in Google Maps',
-                            style: GoogleFonts.outfit(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      ElevatedButton(
+                      ElevatedButton.icon(
                         onPressed: _handleExit,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.redAccent.withOpacity(0.2),
@@ -953,10 +937,11 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
                           elevation: 0,
                           side: const BorderSide(color: Colors.redAccent),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         ),
-                        child: Text(
-                          'End',
+                        icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                        label: Text(
+                          'End Trip Plan',
                           style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13),
                         ),
                       ),
