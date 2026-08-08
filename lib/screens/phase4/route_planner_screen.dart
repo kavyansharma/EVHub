@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../core/widgets/premium_button.dart';
@@ -16,6 +17,7 @@ import '../../providers/maps_provider.dart';
 import '../../services/maps_service.dart';
 import '../../services/vehicle_service.dart';
 import '../../services/charging_time_estimator_service.dart';
+import 'in_app_navigation_screen.dart';
 
 // ─── Color palette ──────────────────────────────────────────────────────────
 const Color _kGreen  = Color(0xFF10B981);
@@ -38,7 +40,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   final FocusNode _startFocusNode = FocusNode();
   final FocusNode _endFocusNode   = FocusNode();
 
-  final MapsService _mapsService = MapsService();
+  MapsService get _mapsService => context.read<MapsProvider>().mapsService;
   GoogleMapController? _mapController;
 
   LocationSearchResult? _selectedOrigin;
@@ -52,11 +54,15 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   bool _isSearchingEnd   = false;
   bool _isPlanningTrip   = false;
   bool _isNavigating     = false;
+  bool _isGpsOrigin      = false;
 
   // Live navigation state
   int _currentRouteIndex = 0;
   Timer? _simulationTimer;
+  StreamSubscription<Position>? _gpsStreamSubscription;
   bool _isTripCompleted  = false;
+  bool _isOffRoute       = false;
+  int _activeStopIndex   = 0;
 
   // Preset popular city routes
   static const List<Map<String, dynamic>> _quickRoutes = [
@@ -111,40 +117,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         source: LocationSearchResultSource.localFallback,
       ),
     },
-    {
-      'label': 'Delhi → Chandigarh',
-      'origin': LocationSearchResult(
-        displayName: 'New Delhi, Delhi',
-        subtitle: 'Capital Region',
-        latitude: 28.6139,
-        longitude: 77.2090,
-        source: LocationSearchResultSource.localFallback,
-      ),
-      'destination': LocationSearchResult(
-        displayName: 'Chandigarh',
-        subtitle: 'City Beautiful',
-        latitude: 30.7333,
-        longitude: 76.7794,
-        source: LocationSearchResultSource.localFallback,
-      ),
-    },
-    {
-      'label': 'Delhi → Agra',
-      'origin': LocationSearchResult(
-        displayName: 'New Delhi, Delhi',
-        subtitle: 'Capital Region',
-        latitude: 28.6139,
-        longitude: 77.2090,
-        source: LocationSearchResultSource.localFallback,
-      ),
-      'destination': LocationSearchResult(
-        displayName: 'Agra, Uttar Pradesh',
-        subtitle: 'City of Taj',
-        latitude: 27.1767,
-        longitude: 78.0081,
-        source: LocationSearchResultSource.localFallback,
-      ),
-    },
   ];
 
   @override
@@ -181,7 +153,53 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _endFocusNode.dispose();
     _debounceTimer?.cancel();
     _simulationTimer?.cancel();
+    _gpsStreamSubscription?.cancel();
     super.dispose();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GPS & LOCATION HANDLING (Explicit User Trigger ONLY)
+  // ══════════════════════════════════════════════════════════════════════════
+  Future<void> _useCurrentLocation() async {
+    setState(() => _isSearchingStart = true);
+    try {
+      final permission = await _mapsService.requestLocationPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        _showSnackbar(
+          'Location access is required to use your current location. You can also enter a starting location manually.',
+          isError: true,
+        );
+        return;
+      }
+
+      final loc = await _mapsService.getCurrentLocation();
+      final lat = loc['latitude']!;
+      final lng = loc['longitude']!;
+      final address = await _mapsService.getAddressFromCoordinates(lat, lng);
+
+      final result = LocationSearchResult(
+        displayName: address,
+        subtitle: 'GPS Location',
+        latitude: lat,
+        longitude: lng,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+
+      setState(() {
+        _selectedOrigin = result;
+        _startController.text = address;
+        _isGpsOrigin = true;
+      });
+
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(LatLng(lat, lng), 14.0),
+      );
+      _showSnackbar('Current location set as starting point.');
+    } catch (e) {
+      _showSnackbar('Location access is required to use your current location. You can also enter a starting location manually.', isError: true);
+    } finally {
+      if (mounted) setState(() => _isSearchingStart = false);
+    }
   }
 
   void _fitMapBounds() {
@@ -222,6 +240,14 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       );
       _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 65));
     }
+  }
+
+  void _reCenterCamera(MapsProvider mp) {
+    if (_mapController == null || mp.routePoints.isEmpty) return;
+    final pos = mp.routePoints[_currentRouteIndex.clamp(0, mp.routePoints.length - 1)];
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(pos, 17.0),
+    );
   }
 
   void _onQueryChanged(String query, bool isStart) {
@@ -274,7 +300,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         {'name': 'Bengaluru, Karnataka',   'lat': 12.9716, 'lng': 77.5946, 'sub': 'Silicon Valley'},
         {'name': 'Chennai, Tamil Nadu',    'lat': 13.0827, 'lng': 80.2707, 'sub': 'Gateway to South'},
         {'name': 'Hyderabad, Telangana',   'lat': 17.3850, 'lng': 78.4867, 'sub': 'Pearl City'},
-        {'name': 'Ahmedabad, Gujarat',     'lat': 23.0225, 'lng': 72.5714, 'sub': 'Manchester of India'},
       ];
 
       for (final city in knownCities) {
@@ -307,6 +332,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         _startController.text = suggestion.displayName;
         _startSuggestions = [];
         _startFocusNode.unfocus();
+        _isGpsOrigin = false;
       } else {
         _isSearchingEnd = true;
         _endController.text = suggestion.displayName;
@@ -346,7 +372,12 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
             if (isStart) { _isSearchingStart = false; _startController.clear(); }
             else { _isSearchingEnd = false; _endController.clear(); }
           });
-          _showSnackbar('Could not find coordinates for "${suggestion.displayName}".', isError: true);
+          _showSnackbar(
+            isStart
+                ? 'Could not find the starting location. Please try a more specific address.'
+                : 'Could not find the destination. Please try a more specific location.',
+            isError: true,
+          );
         }
         return;
       }
@@ -386,6 +417,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       _endController.text = _selectedDestination!.displayName;
       _startSuggestions = [];
       _endSuggestions = [];
+      _isGpsOrigin = false;
     });
     _planTrip();
   }
@@ -409,7 +441,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         return;
       }
       if (endText.isEmpty) {
-        _showSnackbar('Please enter a destination.', isError: true);
+        _showSnackbar('Could not find the destination. Please try a more specific location.', isError: true);
         return;
       }
 
@@ -425,11 +457,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
               source: LocationSearchResultSource.googlePlaces,
             );
           } else {
-            _showSnackbar('Could not find starting location.', isError: true);
+            _showSnackbar('Could not find the starting location. Please try a more specific address.', isError: true);
             return;
           }
         } catch (_) {
-          _showSnackbar('Could not find starting location.', isError: true);
+          _showSnackbar('Could not find the starting location. Please try a more specific address.', isError: true);
           return;
         }
       }
@@ -446,11 +478,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
               source: LocationSearchResultSource.googlePlaces,
             );
           } else {
-            _showSnackbar('Could not find destination location.', isError: true);
+            _showSnackbar('Could not find the destination. Please try a more specific location.', isError: true);
             return;
           }
         } catch (_) {
-          _showSnackbar('Could not find destination location.', isError: true);
+          _showSnackbar('Could not find the destination. Please try a more specific location.', isError: true);
           return;
         }
       }
@@ -466,6 +498,15 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
       if (mounted) {
         _fitMapBounds();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => InAppNavigationScreen(
+              origin: _selectedOrigin!,
+              destination: _selectedDestination!,
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isPlanningTrip = false);
@@ -474,6 +515,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   void _clearTrip() {
     _simulationTimer?.cancel();
+    _gpsStreamSubscription?.cancel();
     setState(() {
       _selectedOrigin = null;
       _selectedDestination = null;
@@ -482,12 +524,18 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       _startSuggestions = [];
       _endSuggestions = [];
       _isNavigating = false;
+      _isGpsOrigin = false;
       _currentRouteIndex = 0;
       _isTripCompleted = false;
+      _isOffRoute = false;
+      _activeStopIndex = 0;
     });
     context.read<MapsProvider>().clearTrip();
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // IN-APP NAVIGATION ENGINE (GPS vs SIMULATION)
+  // ══════════════════════════════════════════════════════════════════════════
   void _startActiveNavigation(MapsProvider mp) {
     if (mp.routePoints.isEmpty) {
       _showSnackbar('No route points available to navigate.', isError: true);
@@ -498,53 +546,235 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       _isNavigating = true;
       _currentRouteIndex = 0;
       _isTripCompleted = false;
+      _isOffRoute = false;
+      _activeStopIndex = 0;
     });
 
     _simulationTimer?.cancel();
+    _gpsStreamSubscription?.cancel();
 
-    _simulationTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+    if (_isGpsOrigin) {
+      // 1. Live GPS Navigation Tracking
+      _gpsStreamSubscription = _mapsService.getPositionStream().listen((Position pos) {
+        if (!mounted || !_isNavigating) return;
+        final currentGps = LatLng(pos.latitude, pos.longitude);
 
-      if (_currentRouteIndex < mp.routePoints.length - 1) {
-        setState(() {
-          _currentRouteIndex++;
-        });
-        final currentPos = mp.routePoints[_currentRouteIndex];
-        double bearing = 0.0;
-        if (_currentRouteIndex < mp.routePoints.length - 1) {
-          final nextPos = mp.routePoints[_currentRouteIndex + 1];
-          bearing = _calculateBearing(currentPos, nextPos);
+        // Point-to-segment projection & off-route detection
+        final minDistanceKm = _minDistanceToRoute(currentGps, mp.routePoints);
+        if (minDistanceKm > 0.3) { // 300m off route
+          setState(() {
+            _isOffRoute = true;
+          });
+          _recalculateOffRoute(currentGps, mp);
+          return;
         }
+
+        // Project position onto nearest route segment
+        final nearestIndex = _findNearestPolylineIndex(currentGps, mp.routePoints);
+        setState(() {
+          _currentRouteIndex = nearestIndex;
+          _isOffRoute = false;
+        });
+
+        // Check if reached recommended charger stop (within 200m)
+        _checkChargerStopReached(mp, currentGps);
+
         _mapController?.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(
-              target: currentPos,
+              target: currentGps,
               zoom: 17.0,
-              bearing: bearing,
+              bearing: pos.heading,
               tilt: 45.0,
             ),
           ),
         );
-      } else {
-        timer.cancel();
-        setState(() {
-          _isTripCompleted = true;
-        });
-      }
-    });
+      });
+    } else {
+      // 2. In-App Route Simulation Mode (Manual Start Origin)
+      _simulationTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        if (_currentRouteIndex < mp.routePoints.length - 1) {
+          setState(() {
+            _currentRouteIndex++;
+          });
+          final currentPos = mp.routePoints[_currentRouteIndex];
+          double bearing = 0.0;
+          if (_currentRouteIndex < mp.routePoints.length - 1) {
+            final nextPos = mp.routePoints[_currentRouteIndex + 1];
+            bearing = _calculateBearing(currentPos, nextPos);
+          }
+
+          _checkChargerStopReached(mp, currentPos);
+
+          _mapController?.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(
+                target: currentPos,
+                zoom: 17.0,
+                bearing: bearing,
+                tilt: 45.0,
+              ),
+            ),
+          );
+        } else {
+          timer.cancel();
+          setState(() {
+            _isTripCompleted = true;
+          });
+        }
+      });
+    }
+  }
+
+  void _checkChargerStopReached(MapsProvider mp, LatLng vehiclePos) {
+    if (mp.recommendedStops.isEmpty || _activeStopIndex >= mp.recommendedStops.length) return;
+    final targetStop = mp.recommendedStops[_activeStopIndex];
+    final distKm = _haversineKm(vehiclePos, LatLng(targetStop.charger.latitude, targetStop.charger.longitude));
+
+    if (distKm <= 0.3) { // Within 300m of recommended charger stop
+      _showChargingStopReachedDialog(mp, targetStop);
+    }
+  }
+
+  void _showChargingStopReachedDialog(MapsProvider mp, dynamic stop) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141724),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.ev_station, color: _kGreen, size: 24),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'CHARGING STOP REACHED',
+                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(stop.charger.title,
+                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+            const SizedBox(height: 6),
+            Text('Arrival Battery: ${stop.estimatedArrivalBatteryPct.toStringAsFixed(0)}%',
+                style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13)),
+            Text('Target Charge: ${stop.recommendedChargingTargetPct.toStringAsFixed(0)}%',
+                style: GoogleFonts.outfit(color: _kGreen, fontWeight: FontWeight.bold, fontSize: 13)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() => _activeStopIndex++);
+            },
+            child: Text('SKIP STOP', style: GoogleFonts.outfit(color: Colors.white70, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _kGreen, foregroundColor: Colors.black),
+            onPressed: () {
+              Navigator.pop(ctx);
+              mp.setSelectedMarker(stop.charger);
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => ChargerMarkerDetailsSheet(charger: stop.charger),
+              );
+            },
+            child: Text('START CHARGING', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _recalculateOffRoute(LatLng currentGps, MapsProvider mp) async {
+    _showSnackbar('You\'re off route. Recalculating route...', isError: true);
+    if (_selectedDestination != null) {
+      final currentOrigin = LocationSearchResult(
+        displayName: 'Current GPS Location',
+        latitude: currentGps.latitude,
+        longitude: currentGps.longitude,
+        source: LocationSearchResultSource.googlePlaces,
+      );
+      await mp.planTrip(origin: currentOrigin, destination: _selectedDestination!);
+      _fitMapBounds();
+    }
   }
 
   void _exitActiveNavigation() {
     _simulationTimer?.cancel();
+    _gpsStreamSubscription?.cancel();
     setState(() {
       _isNavigating = false;
       _currentRouteIndex = 0;
       _isTripCompleted = false;
+      _isOffRoute = false;
     });
     _fitMapBounds();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // POINT-TO-SEGMENT PROJECTION & BEARING MATH
+  // ══════════════════════════════════════════════════════════════════════════
+  double _haversineKm(LatLng a, LatLng b) {
+    const p = 0.017453292519943295;
+    final aLat = a.latitude * p;
+    final bLat = b.latitude * p;
+    final dLat = (b.latitude - a.latitude) * p;
+    final dLng = (b.longitude - a.longitude) * p;
+    final val = 0.5 - math.cos(dLat) / 2 + math.cos(aLat) * math.cos(bLat) * (1 - math.cos(dLng)) / 2;
+    return 12742 * math.asin(math.sqrt(val));
+  }
+
+  double _distanceToSegment(LatLng p, LatLng v, LatLng w) {
+    final l2 = _haversineKm(v, w);
+    if (l2 == 0) return _haversineKm(p, v);
+    final t = (((p.latitude - v.latitude) * (w.latitude - v.latitude) +
+                (p.longitude - v.longitude) * (w.longitude - v.longitude)) /
+               (math.pow(w.latitude - v.latitude, 2) + math.pow(w.longitude - v.longitude, 2)))
+        .clamp(0.0, 1.0);
+    final projection = LatLng(
+      v.latitude + t * (w.latitude - v.latitude),
+      v.longitude + t * (w.longitude - v.longitude),
+    );
+    return _haversineKm(p, projection);
+  }
+
+  double _minDistanceToRoute(LatLng p, List<LatLng> polyline) {
+    if (polyline.length < 2) return 0.0;
+    double minDist = double.infinity;
+    for (int i = 0; i < polyline.length - 1; i++) {
+      final dist = _distanceToSegment(p, polyline[i], polyline[i + 1]);
+      if (dist < minDist) minDist = dist;
+    }
+    return minDist;
+  }
+
+  int _findNearestPolylineIndex(LatLng p, List<LatLng> polyline) {
+    if (polyline.isEmpty) return 0;
+    int minIndex = 0;
+    double minDist = double.infinity;
+    for (int i = 0; i < polyline.length; i++) {
+      final d = _haversineKm(p, polyline[i]);
+      if (d < minDist) {
+        minDist = d;
+        minIndex = i;
+      }
+    }
+    return minIndex;
   }
 
   double _calculateBearing(LatLng start, LatLng end) {
@@ -607,28 +837,23 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       ));
     }
 
-    // 3. Charger Markers directly on Map with specified colors:
-    // Available → Blue, Busy → Red, Ultra Fast → Yellow ⚡, Recommended Stop → Green ⭐
+    // 3. Travel-Ordered Corridor Chargers directly on Map
     final chargers = mp.getFilteredMarkers();
     for (final charger in chargers) {
       final isRec = recommendedIds.contains(charger.id);
       BitmapDescriptor icon;
 
       if (isRec) {
-        // Recommended Stop → Green ⭐
         icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
       } else {
         final powerKw = ChargingTimeEstimatorService.parsePowerKW(charger.power);
         final isUltraFast = powerKw >= 50 || charger.powerType.toLowerCase().contains('dc');
 
         if (isUltraFast) {
-          // Ultra Fast → Yellow ⚡
           icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
         } else if (charger.status == MarkerStatus.busy || charger.status == MarkerStatus.offline) {
-          // Busy / Offline → Red
           icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
         } else {
-          // Available → Blue
           icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
         }
       }
@@ -697,7 +922,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 1. FULL SCREEN GOOGLE MAP CANVAS (90-95%+ Viewport Dominant)
+          // 1. FULL SCREEN GOOGLE MAP CANVAS (95%+ Viewport Dominant)
           Positioned.fill(
             child: GoogleMap(
               initialCameraPosition: const CameraPosition(
@@ -764,7 +989,9 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
                         if (!isRouteActive) ...[
                           const SizedBox(height: 10),
-                          _buildSearchInputsRow(brandColor, mp),
+                          _buildStartLocationSection(brandColor),
+                          const SizedBox(height: 8),
+                          _buildDestinationInputRow(brandColor),
                           const SizedBox(height: 8),
                           _buildQuickRouteChips(brandColor),
                         ],
@@ -813,19 +1040,19 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                                   color: _kGreen.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                child: Text('LIVE NAVIGATION',
+                                child: Text(_isGpsOrigin ? 'LIVE GPS NAVIGATION' : 'ROUTE NAVIGATION',
                                     style: GoogleFonts.outfit(color: _kGreen, fontSize: 10, fontWeight: FontWeight.bold)),
                               ),
                               const SizedBox(width: 8),
-                              Text('In 500m',
+                              Text('In 400m',
                                   style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
                             ],
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _isTripCompleted
-                                ? 'Destination Reached!'
-                                : 'Keep right on highway corridor towards destination',
+                            _isOffRoute
+                                ? 'Recalculating route from current position...'
+                                : (_isTripCompleted ? 'Destination Reached!' : 'Turn right toward highway corridor'),
                             style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -916,19 +1143,37 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _exitActiveNavigation,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _kRed,
-                          side: const BorderSide(color: _kRed, width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _reCenterCamera(mp),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _kBlue.withOpacity(0.2),
+                              foregroundColor: _kBlue,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.my_location, size: 16),
+                            label: Text('Re-center', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13)),
+                          ),
                         ),
-                        icon: const Icon(Icons.close, size: 18),
-                        label: Text('EXIT NAV', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13)),
-                      ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _exitActiveNavigation,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _kRed,
+                              side: const BorderSide(color: _kRed, width: 1.5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.close, size: 16),
+                            label: Text('EXIT NAVIGATION', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12)),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -996,84 +1241,111 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     );
   }
 
-  Widget _buildSearchInputsRow(Color brandColor, MapsProvider mp) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        children: [
-          Row(
+  Widget _buildStartLocationSection(Color brandColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _useCurrentLocation,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kGreen.withOpacity(0.18),
+                  foregroundColor: _kGreen,
+                  elevation: 0,
+                  side: BorderSide(color: _kGreen.withOpacity(0.4)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                icon: const Icon(Icons.my_location, size: 16, color: _kGreen),
+                label: Text('📍 Use Current Location', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Row(
             children: [
-              const Icon(Icons.my_location, color: _kGreen, size: 18),
-              const SizedBox(width: 10),
+              const Icon(Icons.search, color: _kGreen, size: 16),
+              const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: _startController,
                   focusNode: _startFocusNode,
                   style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
                   decoration: InputDecoration(
-                    hintText: 'Enter starting point (e.g. New Delhi)',
+                    hintText: 'Enter starting location',
                     hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 12),
                     border: InputBorder.none,
                     isDense: true,
                   ),
                   onChanged: (val) {
                     _selectedOrigin = null;
+                    _isGpsOrigin = false;
                     _onQueryChanged(val, true);
                   },
                 ),
               ),
               if (_isSearchingStart)
                 const SizedBox(
-                  width: 16, height: 16,
+                  width: 14, height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2, color: _kGreen),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.swap_vert, color: Colors.white70, size: 18),
-                  onPressed: _swapLocations,
                 ),
             ],
           ),
-          const Divider(height: 12, color: Colors.white10),
-          Row(
-            children: [
-              const Icon(Icons.location_on, color: _kRed, size: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _endController,
-                  focusNode: _endFocusNode,
-                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: 'Enter destination (e.g. Jaipur)',
-                    hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 12),
-                    border: InputBorder.none,
-                    isDense: true,
-                  ),
-                  onChanged: (val) {
-                    _selectedDestination = null;
-                    _onQueryChanged(val, false);
-                  },
-                  onSubmitted: (_) => _planTrip(),
-                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDestinationInputRow(Color brandColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.location_on, color: _kRed, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _endController,
+              focusNode: _endFocusNode,
+              style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                hintText: 'Enter destination (e.g. Jaipur)',
+                hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 12),
+                border: InputBorder.none,
+                isDense: true,
               ),
-              if (_isSearchingEnd)
-                const SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _kGreen),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.search, color: _kGreen, size: 20),
-                  onPressed: _planTrip,
-                ),
-            ],
+              onChanged: (val) {
+                _selectedDestination = null;
+                _onQueryChanged(val, false);
+              },
+              onSubmitted: (_) => _planTrip(),
+            ),
           ),
+          if (_isSearchingEnd)
+            const SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: _kGreen),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.arrow_forward, color: _kGreen, size: 18),
+              onPressed: _planTrip,
+            ),
         ],
       ),
     );

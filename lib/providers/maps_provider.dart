@@ -141,6 +141,7 @@ class MapsProvider extends ChangeNotifier {
     _markers = markers;
     notifyListeners();
   }
+  MapsService get mapsService => _mapsService;
   Map<String, double>? get currentLocation => _currentLocation;
   String get discoveryMode => _discoveryMode;
   bool get isLoading => _isLoading;
