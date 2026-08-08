@@ -59,12 +59,12 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     if (mp.routePoints.isEmpty) {
       final bounds = LatLngBounds(
         southwest: LatLng(
-          widget.origin.latitude < widget.destination.latitude ? widget.origin.latitude : widget.destination.latitude,
-          widget.origin.longitude < widget.destination.longitude ? widget.origin.longitude : widget.destination.longitude,
+          math.min(widget.origin.latitude, widget.destination.latitude),
+          math.min(widget.origin.longitude, widget.destination.longitude),
         ),
         northeast: LatLng(
-          widget.origin.latitude > widget.destination.latitude ? widget.origin.latitude : widget.destination.latitude,
-          widget.origin.longitude > widget.destination.longitude ? widget.origin.longitude : widget.destination.longitude,
+          math.max(widget.origin.latitude, widget.destination.latitude),
+          math.max(widget.origin.longitude, widget.destination.longitude),
         ),
       );
       _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
@@ -149,7 +149,6 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     _simulationTimer?.cancel();
 
     // Start in-app navigation progress inside EVHub:
-    // Follow vehicle position and rotate camera according to route direction.
     _simulationTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
       if (!mounted) {
         timer.cancel();
@@ -408,14 +407,14 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
       );
     }
 
-    // 4. EV Chargers along route corridor (Blue = Available, Red = Busy, Yellow = Ultra Fast >=100kW, Green Star = Recommended)
+    // 4. EV Chargers along route corridor
     final corridorChargers = mp.getFilteredMarkers();
     for (final c in corridorChargers) {
       final isRec = recommendedIds.contains(c.id);
       final recStop = isRec ? mp.recommendedStops.firstWhere((s) => s.charger.id == c.id) : null;
 
       final powerKw = double.tryParse(c.power.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
-      final isUltraFast = powerKw >= 100.0;
+      final isUltraFast = powerKw >= 50.0 || c.powerType.toLowerCase().contains('dc');
 
       double hue;
       if (isRec) {

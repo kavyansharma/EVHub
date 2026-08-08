@@ -1,6 +1,5 @@
 // ignore_for_file: unused_element
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -9,14 +8,11 @@ import 'package:geolocator/geolocator.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/glass_container.dart';
 import '../../core/widgets/premium_button.dart';
-import '../../core/widgets/charger_marker_details_sheet.dart';
 import '../../models/location_search_result.dart';
-import '../../models/map_marker_model.dart';
 import '../../models/vehicle_model.dart';
 import '../../providers/maps_provider.dart';
 import '../../services/maps_service.dart';
 import '../../services/vehicle_service.dart';
-import '../../services/charging_time_estimator_service.dart';
 import 'in_app_navigation_screen.dart';
 
 // ─── Color palette ──────────────────────────────────────────────────────────
@@ -24,7 +20,6 @@ const Color _kGreen  = Color(0xFF10B981);
 const Color _kOrange = Color(0xFFF59E0B);
 const Color _kRed    = Color(0xFFEF4444);
 const Color _kBlue   = Color(0xFF3B82F6);
-const Color _kYellow = Color(0xFFEAB308);
 const Color _kCard   = Color(0xFF141724);
 
 class RoutePlannerScreen extends StatefulWidget {
@@ -41,7 +36,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   final FocusNode _endFocusNode   = FocusNode();
 
   MapsService get _mapsService => context.read<MapsProvider>().mapsService;
-  GoogleMapController? _mapController;
 
   LocationSearchResult? _selectedOrigin;
   LocationSearchResult? _selectedDestination;
@@ -53,16 +47,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   bool _isSearchingStart = false;
   bool _isSearchingEnd   = false;
   bool _isPlanningTrip   = false;
-  bool _isNavigating     = false;
   bool _isGpsOrigin      = false;
-
-  // Live navigation state
-  int _currentRouteIndex = 0;
-  Timer? _simulationTimer;
-  StreamSubscription<Position>? _gpsStreamSubscription;
-  bool _isTripCompleted  = false;
-  bool _isOffRoute       = false;
-  int _activeStopIndex   = 0;
 
   // Preset popular city routes
   static const List<Map<String, dynamic>> _quickRoutes = [
@@ -139,9 +124,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         _selectedDestination = provider.tripDestination;
         _endController.text = provider.tripDestination!.displayName;
       }
-      if (provider.routePoints.isNotEmpty) {
-        _fitMapBounds();
-      }
     });
   }
 
@@ -152,8 +134,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _startFocusNode.dispose();
     _endFocusNode.dispose();
     _debounceTimer?.cancel();
-    _simulationTimer?.cancel();
-    _gpsStreamSubscription?.cancel();
     super.dispose();
   }
 
@@ -191,63 +171,15 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         _isGpsOrigin = true;
       });
 
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(LatLng(lat, lng), 14.0),
-      );
       _showSnackbar('Current location set as starting point.');
     } catch (e) {
-      _showSnackbar('Location access is required to use your current location. You can also enter a starting location manually.', isError: true);
+      _showSnackbar(
+        'Location access is required to use your current location. You can also enter a starting location manually.',
+        isError: true,
+      );
     } finally {
       if (mounted) setState(() => _isSearchingStart = false);
     }
-  }
-
-  void _fitMapBounds() {
-    if (_mapController == null) return;
-    final mp = context.read<MapsProvider>();
-
-    final origin = _selectedOrigin ?? mp.tripOrigin;
-    final destination = _selectedDestination ?? mp.tripDestination;
-
-    if (mp.routePoints.isEmpty) {
-      if (origin == null || destination == null) return;
-      final bounds = LatLngBounds(
-        southwest: LatLng(
-          math.min(origin.latitude, destination.latitude),
-          math.min(origin.longitude, destination.longitude),
-        ),
-        northeast: LatLng(
-          math.max(origin.latitude, destination.latitude),
-          math.max(origin.longitude, destination.longitude),
-        ),
-      );
-      _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 70));
-    } else {
-      double minLat = mp.routePoints.first.latitude;
-      double maxLat = mp.routePoints.first.latitude;
-      double minLng = mp.routePoints.first.longitude;
-      double maxLng = mp.routePoints.first.longitude;
-
-      for (final p in mp.routePoints) {
-        if (p.latitude < minLat) minLat = p.latitude;
-        if (p.latitude > maxLat) maxLat = p.latitude;
-        if (p.longitude < minLng) minLng = p.longitude;
-        if (p.longitude > maxLng) maxLng = p.longitude;
-      }
-      final bounds = LatLngBounds(
-        southwest: LatLng(minLat, minLng),
-        northeast: LatLng(maxLat, maxLng),
-      );
-      _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 65));
-    }
-  }
-
-  void _reCenterCamera(MapsProvider mp) {
-    if (_mapController == null || mp.routePoints.isEmpty) return;
-    final pos = mp.routePoints[_currentRouteIndex.clamp(0, mp.routePoints.length - 1)];
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(pos, 17.0),
-    );
   }
 
   void _onQueryChanged(String query, bool isStart) {
@@ -261,11 +193,8 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     }
 
     setState(() {
-      if (isStart) {
-        _isSearchingStart = true;
-      } else {
-        _isSearchingEnd = true;
-      }
+      if (isStart) { _isSearchingStart = true; }
+      else         { _isSearchingEnd   = true; }
     });
 
     _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
@@ -497,7 +426,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       await mp.planTrip(origin: _selectedOrigin!, destination: _selectedDestination!);
 
       if (mounted) {
-        _fitMapBounds();
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -511,284 +439,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     } finally {
       if (mounted) setState(() => _isPlanningTrip = false);
     }
-  }
-
-  void _clearTrip() {
-    _simulationTimer?.cancel();
-    _gpsStreamSubscription?.cancel();
-    setState(() {
-      _selectedOrigin = null;
-      _selectedDestination = null;
-      _startController.clear();
-      _endController.clear();
-      _startSuggestions = [];
-      _endSuggestions = [];
-      _isNavigating = false;
-      _isGpsOrigin = false;
-      _currentRouteIndex = 0;
-      _isTripCompleted = false;
-      _isOffRoute = false;
-      _activeStopIndex = 0;
-    });
-    context.read<MapsProvider>().clearTrip();
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // IN-APP NAVIGATION ENGINE (GPS vs SIMULATION)
-  // ══════════════════════════════════════════════════════════════════════════
-  void _startActiveNavigation(MapsProvider mp) {
-    if (mp.routePoints.isEmpty) {
-      _showSnackbar('No route points available to navigate.', isError: true);
-      return;
-    }
-
-    setState(() {
-      _isNavigating = true;
-      _currentRouteIndex = 0;
-      _isTripCompleted = false;
-      _isOffRoute = false;
-      _activeStopIndex = 0;
-    });
-
-    _simulationTimer?.cancel();
-    _gpsStreamSubscription?.cancel();
-
-    if (_isGpsOrigin) {
-      // 1. Live GPS Navigation Tracking
-      _gpsStreamSubscription = _mapsService.getPositionStream().listen((Position pos) {
-        if (!mounted || !_isNavigating) return;
-        final currentGps = LatLng(pos.latitude, pos.longitude);
-
-        // Point-to-segment projection & off-route detection
-        final minDistanceKm = _minDistanceToRoute(currentGps, mp.routePoints);
-        if (minDistanceKm > 0.3) { // 300m off route
-          setState(() {
-            _isOffRoute = true;
-          });
-          _recalculateOffRoute(currentGps, mp);
-          return;
-        }
-
-        // Project position onto nearest route segment
-        final nearestIndex = _findNearestPolylineIndex(currentGps, mp.routePoints);
-        setState(() {
-          _currentRouteIndex = nearestIndex;
-          _isOffRoute = false;
-        });
-
-        // Check if reached recommended charger stop (within 200m)
-        _checkChargerStopReached(mp, currentGps);
-
-        _mapController?.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(
-              target: currentGps,
-              zoom: 17.0,
-              bearing: pos.heading,
-              tilt: 45.0,
-            ),
-          ),
-        );
-      });
-    } else {
-      // 2. In-App Route Simulation Mode (Manual Start Origin)
-      _simulationTimer = Timer.periodic(const Duration(milliseconds: 700), (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-
-        if (_currentRouteIndex < mp.routePoints.length - 1) {
-          setState(() {
-            _currentRouteIndex++;
-          });
-          final currentPos = mp.routePoints[_currentRouteIndex];
-          double bearing = 0.0;
-          if (_currentRouteIndex < mp.routePoints.length - 1) {
-            final nextPos = mp.routePoints[_currentRouteIndex + 1];
-            bearing = _calculateBearing(currentPos, nextPos);
-          }
-
-          _checkChargerStopReached(mp, currentPos);
-
-          _mapController?.animateCamera(
-            CameraUpdate.newCameraPosition(
-              CameraPosition(
-                target: currentPos,
-                zoom: 17.0,
-                bearing: bearing,
-                tilt: 45.0,
-              ),
-            ),
-          );
-        } else {
-          timer.cancel();
-          setState(() {
-            _isTripCompleted = true;
-          });
-        }
-      });
-    }
-  }
-
-  void _checkChargerStopReached(MapsProvider mp, LatLng vehiclePos) {
-    if (mp.recommendedStops.isEmpty || _activeStopIndex >= mp.recommendedStops.length) return;
-    final targetStop = mp.recommendedStops[_activeStopIndex];
-    final distKm = _haversineKm(vehiclePos, LatLng(targetStop.charger.latitude, targetStop.charger.longitude));
-
-    if (distKm <= 0.3) { // Within 300m of recommended charger stop
-      _showChargingStopReachedDialog(mp, targetStop);
-    }
-  }
-
-  void _showChargingStopReachedDialog(MapsProvider mp, dynamic stop) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF141724),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.ev_station, color: _kGreen, size: 24),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'CHARGING STOP REACHED',
-                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(stop.charger.title,
-                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-            const SizedBox(height: 6),
-            Text('Arrival Battery: ${stop.estimatedArrivalBatteryPct.toStringAsFixed(0)}%',
-                style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13)),
-            Text('Target Charge: ${stop.recommendedChargingTargetPct.toStringAsFixed(0)}%',
-                style: GoogleFonts.outfit(color: _kGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => _activeStopIndex++);
-            },
-            child: Text('SKIP STOP', style: GoogleFonts.outfit(color: Colors.white70, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _kGreen, foregroundColor: Colors.black),
-            onPressed: () {
-              Navigator.pop(ctx);
-              mp.setSelectedMarker(stop.charger);
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (_) => ChargerMarkerDetailsSheet(charger: stop.charger),
-              );
-            },
-            child: Text('START CHARGING', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _recalculateOffRoute(LatLng currentGps, MapsProvider mp) async {
-    _showSnackbar('You\'re off route. Recalculating route...', isError: true);
-    if (_selectedDestination != null) {
-      final currentOrigin = LocationSearchResult(
-        displayName: 'Current GPS Location',
-        latitude: currentGps.latitude,
-        longitude: currentGps.longitude,
-        source: LocationSearchResultSource.googlePlaces,
-      );
-      await mp.planTrip(origin: currentOrigin, destination: _selectedDestination!);
-      _fitMapBounds();
-    }
-  }
-
-  void _exitActiveNavigation() {
-    _simulationTimer?.cancel();
-    _gpsStreamSubscription?.cancel();
-    setState(() {
-      _isNavigating = false;
-      _currentRouteIndex = 0;
-      _isTripCompleted = false;
-      _isOffRoute = false;
-    });
-    _fitMapBounds();
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // POINT-TO-SEGMENT PROJECTION & BEARING MATH
-  // ══════════════════════════════════════════════════════════════════════════
-  double _haversineKm(LatLng a, LatLng b) {
-    const p = 0.017453292519943295;
-    final aLat = a.latitude * p;
-    final bLat = b.latitude * p;
-    final dLat = (b.latitude - a.latitude) * p;
-    final dLng = (b.longitude - a.longitude) * p;
-    final val = 0.5 - math.cos(dLat) / 2 + math.cos(aLat) * math.cos(bLat) * (1 - math.cos(dLng)) / 2;
-    return 12742 * math.asin(math.sqrt(val));
-  }
-
-  double _distanceToSegment(LatLng p, LatLng v, LatLng w) {
-    final l2 = _haversineKm(v, w);
-    if (l2 == 0) return _haversineKm(p, v);
-    final t = (((p.latitude - v.latitude) * (w.latitude - v.latitude) +
-                (p.longitude - v.longitude) * (w.longitude - v.longitude)) /
-               (math.pow(w.latitude - v.latitude, 2) + math.pow(w.longitude - v.longitude, 2)))
-        .clamp(0.0, 1.0);
-    final projection = LatLng(
-      v.latitude + t * (w.latitude - v.latitude),
-      v.longitude + t * (w.longitude - v.longitude),
-    );
-    return _haversineKm(p, projection);
-  }
-
-  double _minDistanceToRoute(LatLng p, List<LatLng> polyline) {
-    if (polyline.length < 2) return 0.0;
-    double minDist = double.infinity;
-    for (int i = 0; i < polyline.length - 1; i++) {
-      final dist = _distanceToSegment(p, polyline[i], polyline[i + 1]);
-      if (dist < minDist) minDist = dist;
-    }
-    return minDist;
-  }
-
-  int _findNearestPolylineIndex(LatLng p, List<LatLng> polyline) {
-    if (polyline.isEmpty) return 0;
-    int minIndex = 0;
-    double minDist = double.infinity;
-    for (int i = 0; i < polyline.length; i++) {
-      final d = _haversineKm(p, polyline[i]);
-      if (d < minDist) {
-        minDist = d;
-        minIndex = i;
-      }
-    }
-    return minIndex;
-  }
-
-  double _calculateBearing(LatLng start, LatLng end) {
-    final startLat = start.latitude * (math.pi / 180.0);
-    final startLng = start.longitude * (math.pi / 180.0);
-    final endLat = end.latitude * (math.pi / 180.0);
-    final endLng = end.longitude * (math.pi / 180.0);
-
-    final dLng = endLng - startLng;
-    final y = math.sin(dLng) * math.cos(endLat);
-    final x = math.cos(startLat) * math.sin(endLat) -
-        math.sin(startLat) * math.cos(endLat) * math.cos(dLng);
-    final brng = math.atan2(y, x);
-    return (brng * (180.0 / math.pi) + 360.0) % 360.0;
   }
 
   void _showSnackbar(String message, {bool isError = false}) {
@@ -809,607 +459,422 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // MARKERS & POLYLINES
-  // ══════════════════════════════════════════════════════════════════════════
-  Set<Marker> _buildMapMarkers(MapsProvider mp) {
-    final Set<Marker> markers = {};
-    final origin = _selectedOrigin ?? mp.tripOrigin;
-    final destination = _selectedDestination ?? mp.tripDestination;
-    final recommendedIds = mp.recommendedStops.map((s) => s.charger.id).toSet();
-
-    // 1. Origin Marker
-    if (origin != null) {
-      markers.add(Marker(
-        markerId: const MarkerId('nav_origin'),
-        position: LatLng(origin.latitude, origin.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-        infoWindow: InfoWindow(title: 'Start: ${origin.displayName}'),
-      ));
-    }
-
-    // 2. Destination Marker
-    if (destination != null) {
-      markers.add(Marker(
-        markerId: const MarkerId('nav_destination'),
-        position: LatLng(destination.latitude, destination.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-        infoWindow: InfoWindow(title: 'Destination: ${destination.displayName}'),
-      ));
-    }
-
-    // 3. Travel-Ordered Corridor Chargers directly on Map
-    final chargers = mp.getFilteredMarkers();
-    for (final charger in chargers) {
-      final isRec = recommendedIds.contains(charger.id);
-      BitmapDescriptor icon;
-
-      if (isRec) {
-        icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
-      } else {
-        final powerKw = ChargingTimeEstimatorService.parsePowerKW(charger.power);
-        final isUltraFast = powerKw >= 50 || charger.powerType.toLowerCase().contains('dc');
-
-        if (isUltraFast) {
-          icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
-        } else if (charger.status == MarkerStatus.busy || charger.status == MarkerStatus.offline) {
-          icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
-        } else {
-          icon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
-        }
-      }
-
-      markers.add(Marker(
-        markerId: MarkerId('nav_charger_${charger.id}'),
-        position: LatLng(charger.latitude, charger.longitude),
-        icon: icon,
-        infoWindow: InfoWindow(
-          title: '${isRec ? "⭐ Recommended: " : ""}${charger.name}',
-          snippet: '${charger.networkName} • ${charger.power}',
-        ),
-        onTap: () {
-          mp.setSelectedMarker(charger);
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => ChargerMarkerDetailsSheet(charger: charger),
-          );
-        },
-      ));
-    }
-
-    // 4. Moving Vehicle Marker during Active Navigation Mode
-    if (_isNavigating && mp.routePoints.isNotEmpty) {
-      final vehiclePos = mp.routePoints[_currentRouteIndex.clamp(0, mp.routePoints.length - 1)];
-      markers.add(Marker(
-        markerId: const MarkerId('moving_vehicle'),
-        position: vehiclePos,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-        anchor: const Offset(0.5, 0.5),
-        infoWindow: const InfoWindow(title: 'Your EV'),
-      ));
-    }
-
-    return markers;
-  }
-
-  Set<Polyline> _buildMapPolylines(MapsProvider mp) {
-    if (mp.routePoints.isEmpty) return {};
-    return {
-      Polyline(
-        polylineId: const PolylineId('nav_route_polyline'),
-        points: mp.routePoints,
-        color: _isNavigating ? const Color(0xFF10B981) : const Color(0xFF3B82F6),
-        width: 6,
-        jointType: JointType.round,
-        startCap: Cap.roundCap,
-        endCap: Cap.roundCap,
-      ),
-    };
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // BUILD
+  // UI BUILDERS
   // ══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final mp = context.watch<MapsProvider>();
-    final brandColor = theme.colorScheme.primary;
-    final isRouteActive = mp.discoveryMode == 'route' && mp.routePoints.isNotEmpty;
+
+    final isCanPlan = _startController.text.trim().isNotEmpty &&
+        _endController.text.trim().isNotEmpty &&
+        !mp.isLoadingRoute &&
+        !_isPlanningTrip;
 
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // 1. FULL SCREEN GOOGLE MAP CANVAS (95%+ Viewport Dominant)
-          Positioned.fill(
-            child: GoogleMap(
-              initialCameraPosition: const CameraPosition(
-                target: LatLng(20.5937, 78.9629),
-                zoom: 5.5,
-              ),
-              onMapCreated: (controller) {
-                _mapController = controller;
-                if (mp.routePoints.isNotEmpty) {
-                  _fitMapBounds();
-                }
-              },
-              markers: _buildMapMarkers(mp),
-              polylines: _buildMapPolylines(mp),
-              zoomControlsEnabled: false,
-              myLocationButtonEnabled: false,
-              compassEnabled: true,
-              buildingsEnabled: true,
-            ),
-          ),
-
-          // 2. TOP FLOATING HEADER / SEARCH BAR
-          if (!_isNavigating)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 12,
-              left: 16, right: 16,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header Banner
+              Row(
                 children: [
-                  GlassContainer(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    borderRadius: 20,
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _kGreen.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.route, color: _kGreen, size: 28),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Smart EV Trip Planner',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Intelligent EV Route & Charger Planner',
+                          style: GoogleFonts.outfit(
+                            color: Colors.grey,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Locations Card (Start & Destination Input)
+              GlassContainer(
+                padding: const EdgeInsets.all(18),
+                borderRadius: 24,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Start Location Header with GPS Button
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Row(
                           children: [
-                            if (isRouteActive)
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back, color: Colors.white, size: 22),
-                                onPressed: _clearTrip,
-                              )
-                            else
-                              const Icon(Icons.directions_car, color: _kGreen, size: 22),
+                            const Icon(Icons.circle, color: _kGreen, size: 12),
                             const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                isRouteActive
-                                    ? '${_selectedOrigin?.displayName.split(',').first ?? "Start"} → ${_selectedDestination?.displayName.split(',').first ?? "Destination"}'
-                                    : 'Smart EV Trip Planner',
-                                style: GoogleFonts.outfit(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            Text(
+                              'Starting Location',
+                              style: GoogleFonts.outfit(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            _buildVehicleSelectorChip(brandColor, mp),
+                            if (_isGpsOrigin) ...[
+                              const SizedBox(width: 6),
+                              const Icon(Icons.gps_fixed, color: _kGreen, size: 14),
+                            ],
                           ],
                         ),
-
-                        if (!isRouteActive) ...[
-                          const SizedBox(height: 10),
-                          _buildStartLocationSection(brandColor),
-                          const SizedBox(height: 8),
-                          _buildDestinationInputRow(brandColor),
-                          const SizedBox(height: 8),
-                          _buildQuickRouteChips(brandColor),
-                        ],
+                        TextButton.icon(
+                          onPressed: _useCurrentLocation,
+                          style: TextButton.styleFrom(
+                            foregroundColor: _kGreen,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          ),
+                          icon: const Icon(Icons.my_location, size: 14),
+                          label: Text(
+                            '📍 Use Current Location',
+                            style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 8),
 
-                  // Autocomplete Search Suggestions Dropdown Overlay
-                  if (_startSuggestions.isNotEmpty)
-                    _buildSuggestionList(_startSuggestions, true),
-                  if (_endSuggestions.isNotEmpty)
-                    _buildSuggestionList(_endSuggestions, false),
-                ],
-              ),
-            ),
-
-          // 3. TOP MANEUVER BANNER (NAVIGATION MODE)
-          if (_isNavigating)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 12,
-              left: 16, right: 16,
-              child: GlassContainer(
-                padding: const EdgeInsets.all(16),
-                borderRadius: 20,
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: const BoxDecoration(
-                        color: _kGreen,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.navigation, color: Colors.black, size: 24),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _kGreen.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(6),
+                    // Start Input Field
+                    TextField(
+                      controller: _startController,
+                      focusNode: _startFocusNode,
+                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 14),
+                      onChanged: (q) => _onQueryChanged(q, true),
+                      decoration: InputDecoration(
+                        hintText: 'Enter start address, city or landmark...',
+                        hintStyle: GoogleFonts.outfit(color: Colors.white38, fontSize: 13),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        prefixIcon: _isSearchingStart
+                            ? const Padding(
+                                padding: EdgeInsets.all(12.0),
+                                child: SizedBox(
+                                  width: 16, height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: _kGreen),
                                 ),
-                                child: Text(_isGpsOrigin ? 'LIVE GPS NAVIGATION' : 'ROUTE NAVIGATION',
-                                    style: GoogleFonts.outfit(color: _kGreen, fontSize: 10, fontWeight: FontWeight.bold)),
-                              ),
-                              const SizedBox(width: 8),
-                              Text('In 400m',
-                                  style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _isOffRoute
-                                ? 'Recalculating route from current position...'
-                                : (_isTripCompleted ? 'Destination Reached!' : 'Turn right toward highway corridor'),
-                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                              )
+                            : const Icon(Icons.search, color: Colors.white54, size: 20),
+                        suffixIcon: _startController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.white38, size: 18),
+                                onPressed: () {
+                                  _startController.clear();
+                                  setState(() {
+                                    _selectedOrigin = null;
+                                    _startSuggestions = [];
+                                    _isGpsOrigin = false;
+                                  });
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
 
-          // 4. FLOATING BOTTOM SUMMARY CARD (TRIP PREVIEW MODE)
-          if (isRouteActive && !_isNavigating)
-            Positioned(
-              left: 16, right: 16, bottom: 24,
-              child: GlassContainer(
-                padding: const EdgeInsets.all(18),
-                borderRadius: 24,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+                    // Start Suggestions
+                    if (_startSuggestions.isNotEmpty) _buildSuggestionList(_startSuggestions, true),
+
+                    const SizedBox(height: 12),
+
+                    // Divider & Swap Button
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildMetricItem(
-                          'Distance',
-                          mp.routeDistance ?? '${mp.smartTripResult?.tripDistanceKm.toStringAsFixed(0) ?? "0"} km',
-                          Icons.straighten,
-                          _kBlue,
+                        const Expanded(child: Divider(color: Colors.white10)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: InkWell(
+                            onTap: _swapLocations,
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.swap_vert, color: _kGreen, size: 20),
+                            ),
+                          ),
                         ),
-                        _buildMetricItem(
-                          'ETA',
-                          mp.routeDuration ?? '—',
-                          Icons.schedule,
-                          _kOrange,
-                        ),
-                        _buildMetricItem(
-                          'Battery Usage',
-                          '${mp.smartTripResult?.estimatedBatteryAtDestinationPct.clamp(0.0, 100.0).toStringAsFixed(0) ?? "50"}% Est.',
-                          Icons.battery_charging_full,
-                          _kGreen,
-                        ),
-                        _buildMetricItem(
-                          'Charging Stops',
-                          '${mp.recommendedStops.length} Stop${mp.recommendedStops.length == 1 ? "" : "s"}',
-                          Icons.ev_station,
-                          _kGreen,
+                        const Expanded(child: Divider(color: Colors.white10)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Destination Header
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, color: _kRed, size: 14),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Destination Location',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: PremiumButton(
-                        text: 'START NAVIGATION',
-                        icon: Icons.navigation,
-                        onPressed: () => _startActiveNavigation(mp),
+                    const SizedBox(height: 8),
+
+                    // Destination Input Field
+                    TextField(
+                      controller: _endController,
+                      focusNode: _endFocusNode,
+                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 14),
+                      onChanged: (q) => _onQueryChanged(q, false),
+                      decoration: InputDecoration(
+                        hintText: 'Enter destination address, city or landmark...',
+                        hintStyle: GoogleFonts.outfit(color: Colors.white38, fontSize: 13),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        prefixIcon: _isSearchingEnd
+                            ? const Padding(
+                                padding: EdgeInsets.all(12.0),
+                                child: SizedBox(
+                                  width: 16, height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: _kRed),
+                                ),
+                              )
+                            : const Icon(Icons.place, color: Colors.white54, size: 20),
+                        suffixIcon: _endController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.white38, size: 18),
+                                onPressed: () {
+                                  _endController.clear();
+                                  setState(() {
+                                    _selectedDestination = null;
+                                    _endSuggestions = [];
+                                  });
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       ),
                     ),
+
+                    // Destination Suggestions
+                    if (_endSuggestions.isNotEmpty) _buildSuggestionList(_endSuggestions, false),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(height: 20),
 
-          // 5. FLOATING BOTTOM NAVIGATION HUD (ACTIVE NAVIGATION MODE)
-          if (_isNavigating)
-            Positioned(
-              left: 16, right: 16, bottom: 24,
-              child: GlassContainer(
+              // Quick Popular Routes Chips
+              Text(
+                'POPULAR EV ROUTES',
+                style: GoogleFonts.outfit(
+                  color: Colors.grey,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _quickRoutes.map((route) {
+                    final label = route['label'] as String;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: Text(label, style: GoogleFonts.outfit(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        avatar: const Icon(Icons.bolt, color: _kGreen, size: 14),
+                        backgroundColor: Colors.white.withOpacity(0.06),
+                        side: BorderSide(color: Colors.white.withOpacity(0.12)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        onPressed: () => _applyQuickRoute(route),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Vehicle & Battery Intelligence Section
+              GlassContainer(
                 padding: const EdgeInsets.all(18),
                 borderRadius: 24,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildMetricItem('Speed', '65 km/h', Icons.speed, _kBlue),
-                        _buildMetricItem(
-                          'Remaining',
-                          '${((1.0 - (_currentRouteIndex / math.max(1, mp.routePoints.length - 1))) * (mp.smartTripResult?.tripDistanceKm ?? 200)).toStringAsFixed(0)} km',
-                          Icons.alt_route,
-                          _kGreen,
+                        const Icon(Icons.electric_car, color: _kBlue, size: 20),
+                        const SizedBox(width: 10),
+                        Text(
+                          'EV Vehicle & Battery Config',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
                         ),
-                        _buildMetricItem('ETA', mp.routeDuration ?? '—', Icons.access_time, _kOrange),
-                        _buildMetricItem('Battery', '${mp.currentBatteryPct.toInt()}%', Icons.battery_charging_full, _kGreen),
                       ],
                     ),
                     const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => _reCenterCamera(mp),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _kBlue.withOpacity(0.2),
-                              foregroundColor: _kBlue,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                            icon: const Icon(Icons.my_location, size: 16),
-                            label: Text('Re-center', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ),
+
+                    // Vehicle Selector
+                    DropdownButtonFormField<VehicleModel>(
+                      value: mp.selectedVehicle ?? VehicleService.indianEVEcosystem.first,
+                      dropdownColor: _kCard,
+                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      decoration: InputDecoration(
+                        labelText: 'Selected EV Model',
+                        labelStyle: GoogleFonts.outfit(color: Colors.white70, fontSize: 12),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _exitActiveNavigation,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _kRed,
-                              side: const BorderSide(color: _kRed, width: 1.5),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                            icon: const Icon(Icons.close, size: 16),
-                            label: Text('EXIT NAVIGATION', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12)),
-                          ),
+                      ),
+                      items: VehicleService.indianEVEcosystem.map((v) {
+                        return DropdownMenuItem<VehicleModel>(
+                          value: v,
+                          child: Text(v.displayName),
+                        );
+                      }).toList(),
+                      onChanged: (v) => mp.setSelectedVehicle(v),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Battery Slider
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Current Battery', style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13)),
+                        Text(
+                          '${mp.currentBatteryPct.toInt()}%',
+                          style: GoogleFonts.outfit(color: _kGreen, fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ),
+                    Slider(
+                      value: mp.currentBatteryPct,
+                      min: 5.0,
+                      max: 100.0,
+                      divisions: 19,
+                      activeColor: _kGreen,
+                      inactiveColor: Colors.white12,
+                      onChanged: (val) => mp.setCurrentBatteryPct(val),
+                    ),
 
-          // Loading overlay
-          if (mp.isLoadingRoute || mp.isLoading || mp.isCalculatingSmartTrip || _isPlanningTrip)
-            Positioned(
-              left: 16, right: 16, bottom: 24,
-              child: GlassContainer(
-                padding: const EdgeInsets.all(20),
-                borderRadius: 20,
-                child: Row(
-                  children: [
-                    const CircularProgressIndicator(color: AppColors.primary, strokeWidth: 3),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(
-                        'Calculating EV route & scanning corridor chargers...',
-                        style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
+                    // Safety Buffer Slider
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Safety Buffer Reserve', style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13)),
+                        Text(
+                          '${mp.safetyBufferPct.toInt()}%',
+                          style: GoogleFonts.outfit(color: _kOrange, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: mp.safetyBufferPct,
+                      min: 5.0,
+                      max: 30.0,
+                      divisions: 5,
+                      activeColor: _kOrange,
+                      inactiveColor: Colors.white12,
+                      onChanged: (val) => mp.setSafetyBufferPct(val),
                     ),
                   ],
                 ),
               ),
-            ),
-        ],
-      ),
-    );
-  }
+              const SizedBox(height: 24),
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // HELPER WIDGETS
-  // ══════════════════════════════════════════════════════════════════════════
-  Widget _buildVehicleSelectorChip(Color brandColor, MapsProvider mp) {
-    final availableVehicles = VehicleService.indianEVEcosystem;
-    final selectedVeh = mp.selectedVehicle ?? availableVehicles.first;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: _kCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<VehicleModel>(
-          value: availableVehicles.any((v) => v.id == selectedVeh.id) ? selectedVeh : availableVehicles.first,
-          dropdownColor: const Color(0xFF1A1D2E),
-          isDense: true,
-          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70, size: 16),
-          items: availableVehicles.map((v) => DropdownMenuItem<VehicleModel>(
-            value: v,
-            child: Text(
-              '${v.manufacturer} ${v.model}',
-              style: GoogleFonts.outfit(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-          )).toList(),
-          onChanged: (veh) {
-            if (veh != null) mp.setSelectedVehicle(veh);
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStartLocationSection(Color brandColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _useCurrentLocation,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kGreen.withOpacity(0.18),
-                  foregroundColor: _kGreen,
-                  elevation: 0,
-                  side: BorderSide(color: _kGreen.withOpacity(0.4)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                ),
-                icon: const Icon(Icons.my_location, size: 16, color: _kGreen),
-                label: Text('📍 Use Current Location', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.04),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.search, color: _kGreen, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _startController,
-                  focusNode: _startFocusNode,
-                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: 'Enter starting location',
-                    hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 12),
-                    border: InputBorder.none,
-                    isDense: true,
-                  ),
-                  onChanged: (val) {
-                    _selectedOrigin = null;
-                    _isGpsOrigin = false;
-                    _onQueryChanged(val, true);
-                  },
+              // PLAN TRIP BUTTON
+              SizedBox(
+                width: double.infinity,
+                child: PremiumButton(
+                  text: mp.isLoadingRoute || _isPlanningTrip ? 'CALCULATING ROUTE...' : 'PLAN TRIP',
+                  icon: Icons.map,
+                  onPressed: isCanPlan ? _planTrip : () {},
                 ),
               ),
-              if (_isSearchingStart)
-                const SizedBox(
-                  width: 14, height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _kGreen),
-                ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 
-  Widget _buildDestinationInputRow(Color brandColor) {
+  Widget _buildSuggestionList(List<LocationSearchResult> suggestions, bool isStart) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      margin: const EdgeInsets.only(top: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.location_on, color: _kRed, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _endController,
-              focusNode: _endFocusNode,
-              style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-              decoration: InputDecoration(
-                hintText: 'Enter destination (e.g. Jaipur)',
-                hintStyle: GoogleFonts.outfit(color: Colors.grey, fontSize: 12),
-                border: InputBorder.none,
-                isDense: true,
-              ),
-              onChanged: (val) {
-                _selectedDestination = null;
-                _onQueryChanged(val, false);
-              },
-              onSubmitted: (_) => _planTrip(),
-            ),
+        color: const Color(0xFF1E2235),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          if (_isSearchingEnd)
-            const SizedBox(
-              width: 14, height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2, color: _kGreen),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.arrow_forward, color: _kGreen, size: 18),
-              onPressed: _planTrip,
-            ),
         ],
       ),
-    );
-  }
-
-  Widget _buildQuickRouteChips(Color brandColor) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: _quickRoutes.map((qr) {
-          final label = qr['label'] as String;
-          return Padding(
-            padding: const EdgeInsets.only(right: 6.0),
-            child: ActionChip(
-              label: Text(label, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600)),
-              backgroundColor: const Color(0xFF1A1D2E),
-              side: const BorderSide(color: Colors.white10),
-              labelStyle: const TextStyle(color: Colors.white70),
-              onPressed: () => _applyQuickRoute(qr),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: suggestions.take(5).map((s) {
+          return ListTile(
+            dense: true,
+            leading: Icon(
+              isStart ? Icons.trip_origin : Icons.place,
+              color: isStart ? _kGreen : _kRed,
+              size: 18,
             ),
+            title: Text(
+              s.displayName,
+              style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              s.subtitle ?? 'Location',
+              style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11),
+            ),
+            onTap: () => _selectSuggestion(s, isStart),
           );
         }).toList(),
       ),
-    );
-  }
-
-  Widget _buildSuggestionList(List<LocationSearchResult> items, bool isStart) {
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      constraints: const BoxConstraints(maxHeight: 180),
-      decoration: BoxDecoration(
-        color: _kCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: ListView.builder(
-        shrinkWrap: true,
-        itemCount: items.length,
-        itemBuilder: (_, idx) {
-          final item = items[idx];
-          return ListTile(
-            dense: true,
-            leading: Icon(isStart ? Icons.location_on_outlined : Icons.flag_outlined,
-                color: isStart ? _kGreen : _kRed, size: 18),
-            title: Text(item.displayName,
-                style: GoogleFonts.outfit(color: Colors.white, fontSize: 13)),
-            subtitle: Text(item.subtitle ?? 'Location',
-                style: GoogleFonts.outfit(color: Colors.grey, fontSize: 11)),
-            onTap: () => _selectSuggestion(item, isStart),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildMetricItem(String label, String value, IconData icon, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(value, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-        Text(label, style: GoogleFonts.outfit(color: Colors.grey, fontSize: 10)),
-      ],
     );
   }
 }
