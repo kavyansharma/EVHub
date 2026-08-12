@@ -205,6 +205,8 @@ class _InAppNavigationScreenState extends State<InAppNavigationScreen> {
     context.read<MapsProvider>().clearTrip();
     if (Navigator.canPop(context)) {
       Navigator.pop(context);
+    } else {
+      Navigator.of(context).maybePop();
     }
   }
 
